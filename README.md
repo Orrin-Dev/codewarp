@@ -23,7 +23,6 @@ A custom desktop app for making Scratch projects, with two ways to code that you
 - Work on a project together with others, live.
 - See other people's mouse cursors, with everything kept in sync.
 - Usernames come from each person's linked Scratch account.
-- Uses one central server (self-hosted on a VPS).
 
 ## Getting started
 
