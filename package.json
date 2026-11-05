@@ -1,0 +1,16 @@
+{
+  "name": "codewarp",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Codewarp - a custom Scratch desktop app with block and text coding modes",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @codewarp/desktop",
+    "build": "npm run build -w @codewarp/desktop",
+    "dist": "npm run dist -w @codewarp/desktop",
+    "typecheck": "npm run typecheck -w @codewarp/core && npm run typecheck -w @codewarp/desktop"
+  }
+}
