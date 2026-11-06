@@ -4,6 +4,9 @@ import { BlocksEditor } from './blocksEditor';
 import { SpritePanel } from './spritePanel';
 import { MonitorOverlay } from './monitors';
 import { attachStageInput } from './stageInput';
+import { CostumesPanel } from './costumes';
+import { SoundsPanel } from './sounds';
+import { pickFile } from './files';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -21,18 +24,6 @@ window.addEventListener('error', (e) => setStatus(`Error: ${e.message}`));
 window.addEventListener('unhandledrejection', (e) =>
   setStatus(`Error: ${(e.reason && e.reason.message) || String(e.reason)}`),
 );
-
-/** Pick a file in the browser's own dialog (works in Electron too). */
-function pickFile(accept: string): Promise<File | null> {
-  return new Promise((resolve) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = accept;
-    input.addEventListener('change', () => resolve(input.files?.[0] ?? null));
-    input.addEventListener('cancel', () => resolve(null));
-    input.click();
-  });
-}
 
 function downloadInBrowser(name: string, data: Uint8Array): void {
   const url = URL.createObjectURL(new Blob([data as BlobPart], { type: 'application/x.scratch.sb3' }));
@@ -85,6 +76,29 @@ function boot(): void {
   new MonitorOverlay($('monitors'), host.vm);
   attachStageInput(canvas, host.vm);
   new SpritePanel($('sprite-list'), $('sprite-props'), host, (message) => setStatus(message));
+
+  // ---- Tabs: Code / Costumes / Sounds -----------------------------------
+
+  const costumes = new CostumesPanel($('pane-costumes'), host, setStatus);
+  const sounds = new SoundsPanel($('pane-sounds'), host, setStatus);
+  const tabs = {
+    code: { tab: $('tab-code'), pane: $('pane-code') },
+    costumes: { tab: $('tab-costumes'), pane: $('pane-costumes') },
+    sounds: { tab: $('tab-sounds'), pane: $('pane-sounds') },
+  };
+  type TabName = keyof typeof tabs;
+  function showTab(name: TabName): void {
+    for (const [key, { tab, pane }] of Object.entries(tabs)) {
+      tab.classList.toggle('active', key === name);
+      pane.hidden = key !== name;
+    }
+    costumes.setActive(name === 'costumes');
+    sounds.setActive(name === 'sounds');
+    if (name === 'code') editor.resize();
+  }
+  (Object.keys(tabs) as TabName[]).forEach((name) =>
+    tabs[name].tab.addEventListener('click', () => showTab(name)),
+  );
 
   // ---- Sprites ---------------------------------------------------------
 
@@ -178,6 +192,7 @@ function boot(): void {
   const modeText = $('mode-text');
 
   function showBlocks(): void {
+    showTab('code');
     textHost.hidden = true;
     blocksHost.hidden = false;
     modeBlocks.classList.add('active');
@@ -186,6 +201,7 @@ function boot(): void {
   }
 
   function showText(): void {
+    showTab('code');
     // Placeholder: the C#-style and Python-style printers will render here later.
     textHost.value = JSON.stringify(host.editingTargetJson(), null, 2);
     blocksHost.hidden = true;

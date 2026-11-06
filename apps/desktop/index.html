@@ -22,9 +22,20 @@
     </header>
 
     <main class="layout">
-      <section class="code-pane">
-        <div id="blocks-host" class="blocks-host"></div>
-        <textarea id="text-host" class="text-host" readonly hidden spellcheck="false"></textarea>
+      <section class="main-pane">
+        <nav class="tabs" role="tablist" aria-label="Editor">
+          <button id="tab-code" type="button" class="active" role="tab">Code</button>
+          <button id="tab-costumes" type="button" role="tab">Costumes</button>
+          <button id="tab-sounds" type="button" role="tab">Sounds</button>
+        </nav>
+        <div class="pane-body">
+          <div id="pane-code" class="pane code-pane">
+            <div id="blocks-host" class="blocks-host"></div>
+            <textarea id="text-host" class="text-host" readonly hidden spellcheck="false"></textarea>
+          </div>
+          <div id="pane-costumes" class="pane" hidden></div>
+          <div id="pane-sounds" class="pane" hidden></div>
+        </div>
       </section>
 
       <aside class="side">

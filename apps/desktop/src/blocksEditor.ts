@@ -33,6 +33,13 @@ export class BlocksEditor {
     ScratchBlocks.prompt = showPrompt;
     // "Make a Block" and right-click > Edit on custom blocks call this; scratch-blocks has no UI for it.
     ScratchBlocks.Procedures.externalProcedureDefCallback = showMakeBlock;
+    // scratch-blocks ships getCheckboxState as a stub that always answers "unchecked" and expects the
+    // host app to replace it. Without this, every palette rebuild draws the variable checkboxes off
+    // even though the VM is showing those monitors. The VM is the source of truth.
+    ScratchBlocks.VerticalFlyout.getCheckboxState = (blockId: string): boolean => {
+      const monitored = this.vm.runtime.monitorBlocks.getBlock(blockId);
+      return monitored ? Boolean(monitored.isMonitored) : false;
+    };
     this.workspace = ScratchBlocks.inject(host, {
       media: './blocks-media/',
       toolbox: TOOLBOX_XML,
