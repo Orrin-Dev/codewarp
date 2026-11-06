@@ -26,6 +26,8 @@ jobs:
       # Step 3: Install dependencies for the workspace
       - name: Install Dependencies
         run: npm ci
+        env:
+          HUSKY: '0'
 
       # Step 4: Run the specific workspace build command
       - name: Build Desktop Package
