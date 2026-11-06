@@ -1,52 +1,59 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Codewarp</title>
-  <link rel="stylesheet" href="/src/styles.css" />
-</head>
-<body>
-<header class="topbar">
-  <div class="brand">Codewarp</div>
-  <div class="actions">
-    <button id="btn-new" type="button">New</button>
-    <button id="btn-open" type="button">Open .sb3</button>
-    <button id="btn-save" type="button">Save .sb3</button>
-  </div>
-  <div class="mode-toggle" role="group" aria-label="Coding mode">
-    <button id="mode-blocks" type="button" class="active">Blocks</button>
-    <button id="mode-text" type="button">Text (preview)</button>
-  </div>
-  <div id="status" class="status">Starting…</div>
-</header>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codewarp</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">Codewarp</div>
+      <div class="actions">
+        <button id="btn-new" type="button">New</button>
+        <button id="btn-open" type="button">Open .sb3</button>
+        <button id="btn-save" type="button">Save .sb3</button>
+      </div>
+      <div class="mode-toggle" role="group" aria-label="Coding mode">
+        <button id="mode-blocks" type="button" class="active">Blocks</button>
+        <button id="mode-text" type="button">Text (preview)</button>
+      </div>
+      <div id="status" class="status">Starting…</div>
+    </header>
 
-<main class="layout">
-  <section class="code-pane">
-    <div id="blocks-host" class="blocks-host"></div>
-    <textarea id="text-host" class="text-host" readonly hidden spellcheck="false"></textarea>
-  </section>
+    <main class="layout">
+      <section class="code-pane">
+        <div id="blocks-host" class="blocks-host"></div>
+        <textarea id="text-host" class="text-host" readonly hidden spellcheck="false"></textarea>
+      </section>
 
-  <aside class="side">
-    <div class="stage-controls">
-      <button id="btn-flag" type="button" title="Green flag">▶ Run</button>
-      <button id="btn-stop" type="button" title="Stop">■ Stop</button>
-    </div>
-    <canvas id="stage" class="stage" width="480" height="360"></canvas>
-    <div class="sprites-head">
-      <span>Sprites</span>
-      <button id="btn-add-sprite" type="button">+ Add</button>
-    </div>
-    <div id="sprite-list" class="sprite-list"></div>
-  </aside>
-</main>
+      <aside class="side">
+        <div class="stage-controls">
+          <button id="btn-flag" type="button" title="Green flag">▶ Run</button>
+          <button id="btn-stop" type="button" title="Stop">■ Stop</button>
+        </div>
+        <div class="stage-wrap">
+          <canvas id="stage" class="stage" width="480" height="360"></canvas>
+          <div id="monitors" class="monitors"></div>
+        </div>
+        <div class="sprites-head">
+          <span>Sprites</span>
+          <div class="add-buttons">
+            <button id="btn-add-sprite" type="button" title="Add a sprite with a colored arrow shape">+ Shape</button>
+            <button id="btn-upload-sprite" type="button" title="Add a sprite from an image file (png, jpg, svg)">+ Upload</button>
+          </div>
+        </div>
+        <div id="sprite-list" class="sprite-list"></div>
+        <div id="sprite-props" class="sprite-props"></div>
+      </aside>
+    </main>
 
-<!-- scratch-blocks: classic scripts that define the global `Blockly`. Order matters. -->
-<script src="./scratch-blocks/blockly_compressed_vertical.js"></script>
-<script src="./scratch-blocks/blocks_compressed.js"></script>
-<script src="./scratch-blocks/blocks_compressed_vertical.js"></script>
-<script src="./scratch-blocks/msg/messages.js"></script>
+    <!-- scratch-blocks: classic scripts that define the global `Blockly`. Order matters. -->
+    <script src="./scratch-blocks/blockly_compressed_vertical.js"></script>
+    <script src="./scratch-blocks/blocks_compressed.js"></script>
+    <script src="./scratch-blocks/blocks_compressed_vertical.js"></script>
+    <script src="./scratch-blocks/msg/messages.js"></script>
 
-<script type="module" src="/src/main.ts"></script>
-</body>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>

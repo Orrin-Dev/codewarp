@@ -1,5 +1,9 @@
-import { VmHost } from './vmHost';
+import { spriteShapeSvg } from '@codewarp/core';
+import { VmHost, type SpriteImage } from './vmHost';
 import { BlocksEditor } from './blocksEditor';
+import { SpritePanel } from './spritePanel';
+import { MonitorOverlay } from './monitors';
+import { attachStageInput } from './stageInput';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -15,92 +19,111 @@ const setStatus = (text: string) => {
 // Surface any error on screen instead of leaving the status stuck.
 window.addEventListener('error', (e) => setStatus(`Error: ${e.message}`));
 window.addEventListener('unhandledrejection', (e) =>
-    setStatus(`Error: ${(e.reason && e.reason.message) || String(e.reason)}`),
+  setStatus(`Error: ${(e.reason && e.reason.message) || String(e.reason)}`),
 );
+
+/** Pick a file in the browser's own dialog (works in Electron too). */
+function pickFile(accept: string): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.addEventListener('change', () => resolve(input.files?.[0] ?? null));
+    input.addEventListener('cancel', () => resolve(null));
+    input.click();
+  });
+}
+
+function downloadInBrowser(name: string, data: Uint8Array): void {
+  const url = URL.createObjectURL(new Blob([data as BlobPart], { type: 'application/x.scratch.sb3' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Read an image file and work out its format and pixel size. */
+async function readSpriteImage(file: File): Promise<SpriteImage> {
+  const lower = file.name.toLowerCase();
+  const ext: SpriteImage['ext'] = lower.endsWith('.svg') ? 'svg' : lower.endsWith('.png') ? 'png' : 'jpg';
+  if (!/\.(svg|png|jpe?g)$/.test(lower)) throw new Error('Use a .png, .jpg or .svg image');
+
+  const data = new Uint8Array(await file.arrayBuffer());
+  const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'png' ? 'image/png' : 'image/jpeg';
+  const url = URL.createObjectURL(new Blob([data as BlobPart], { type: mime }));
+  try {
+    const size = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth || 64, height: img.naturalHeight || 64 });
+      img.onerror = () => reject(new Error(`Could not read ${file.name} as an image`));
+      img.src = url;
+    });
+    return { data, ext, ...size };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Fill / outline pairs for new shape sprites, cycled so sprites are easy to tell apart.
+const SHAPE_COLORS: [string, string][] = [
+  ['#ff6680', '#c93a58'],
+  ['#4c97ff', '#2b6bd0'],
+  ['#59c059', '#2f8f2f'],
+  ['#ffab19', '#c47a00'],
+  ['#9966ff', '#6c3fd1'],
+];
 
 function boot(): void {
   setStatus('Creating VM…');
-  const host = new VmHost($<HTMLCanvasElement>('stage'));
+  const canvas = $<HTMLCanvasElement>('stage');
+  const host = new VmHost(canvas);
 
   setStatus('Creating blocks editor…');
   const editor = new BlocksEditor($('blocks-host'), host.vm);
 
-  // ---- Sprite list ------------------------------------------------------
+  new MonitorOverlay($('monitors'), host.vm);
+  attachStageInput(canvas, host.vm);
+  new SpritePanel($('sprite-list'), $('sprite-props'), host, (message) => setStatus(message));
 
-  const spriteList = $('sprite-list');
+  // ---- Sprites ---------------------------------------------------------
 
-  host.vm.addListener(
-      'targetsUpdate',
-      (data: { targetList: { id: string; name: string; isStage: boolean }[]; editingTarget: string }) => {
-        spriteList.replaceChildren();
-        for (const t of data.targetList) {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.textContent = t.name;
-          if (t.id === data.editingTarget) btn.classList.add('active');
-          btn.addEventListener('click', () => host.vm.setEditingTarget(t.id));
-          spriteList.appendChild(btn);
-        }
-      },
-  );
+  const spriteCount = (): number =>
+    host.vm.runtime.targets.filter((t: any) => !t.isStage && t.isOriginal).length;
 
-  // Experimental: adds an empty sprite (no costume yet; costume editing comes later).
   $('btn-add-sprite').addEventListener('click', async () => {
-    const count = host.vm.runtime.targets.filter((t: any) => !t.isStage).length;
-    const sprite = {
-      name: `Sprite${count + 1}`,
-      isStage: false,
-      variables: {},
-      lists: {},
-      broadcasts: {},
-      blocks: {},
-      comments: {},
-      currentCostume: 0,
-      costumes: [],
-      sounds: [],
-      volume: 100,
-      layerOrder: count + 1,
-      visible: true,
-      x: 0,
-      y: 0,
-      size: 100,
-      direction: 90,
-      draggable: false,
-      rotationStyle: 'all around',
-    };
+    const n = spriteCount();
+    const [fill, stroke] = SHAPE_COLORS[n % SHAPE_COLORS.length];
     try {
-      await host.vm.addSprite(JSON.stringify(sprite));
-    } catch (error) {
+      await host.addSpriteFromImage(`Sprite${n + 1}`, {
+        data: new TextEncoder().encode(spriteShapeSvg(fill, stroke)),
+        ext: 'svg',
+        width: 64,
+        height: 64,
+      });
+    } catch (error: any) {
       console.error(error);
-      setStatus('Could not add sprite (needs a costume asset in this build)');
+      setStatus(`Could not add sprite: ${error?.message ?? error}`);
+    }
+  });
+
+  $('btn-upload-sprite').addEventListener('click', async () => {
+    const file = await pickFile('.png,.jpg,.jpeg,.svg');
+    if (!file) return;
+    try {
+      const image = await readSpriteImage(file);
+      const baseName = file.name.replace(/\.[^.]+$/, '') || `Sprite${spriteCount() + 1}`;
+      await host.addSpriteFromImage(baseName, image);
+      setStatus(`Added ${baseName}`);
+    } catch (error: any) {
+      console.error(error);
+      setStatus(`Could not add sprite: ${error?.message ?? error}`);
     }
   });
 
   // ---- Project open / save / new ---------------------------------------
 
   let projectName = 'project.sb3';
-
-  function pickFileInBrowser(): Promise<{ name: string; data: Uint8Array } | null> {
-    return new Promise((resolve) => {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = '.sb3';
-      input.addEventListener('change', async () => {
-        const file = input.files?.[0];
-        resolve(file ? { name: file.name, data: new Uint8Array(await file.arrayBuffer()) } : null);
-      });
-      input.click();
-    });
-  }
-
-  function downloadInBrowser(name: string, data: Uint8Array): void {
-    const url = URL.createObjectURL(new Blob([data as BlobPart], { type: 'application/x.scratch.sb3' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
 
   $('btn-new').addEventListener('click', async () => {
     await host.newProject();
@@ -109,11 +132,17 @@ function boot(): void {
   });
 
   $('btn-open').addEventListener('click', async () => {
-    const picked = window.codewarp ? await window.codewarp.openProject() : await pickFileInBrowser();
+    let picked: { name: string; data: Uint8Array } | null;
+    if (window.codewarp) {
+      picked = await window.codewarp.openProject();
+    } else {
+      const file = await pickFile('.sb3');
+      picked = file ? { name: file.name, data: new Uint8Array(await file.arrayBuffer()) } : null;
+    }
     if (!picked) return;
     const buffer = picked.data.buffer.slice(
-        picked.data.byteOffset,
-        picked.data.byteOffset + picked.data.byteLength,
+      picked.data.byteOffset,
+      picked.data.byteOffset + picked.data.byteLength,
     ) as ArrayBuffer;
     try {
       await host.load(buffer);
@@ -172,21 +201,21 @@ function boot(): void {
 
   setStatus('Loading project…');
   const hangTimer = window.setTimeout(
-      () => setStatus('Project load is taking too long (open DevTools: Ctrl+Shift+I)'),
-      8000,
+    () => setStatus('Project load is taking too long (open DevTools: Ctrl+Shift+I)'),
+    8000,
   );
 
   host
-      .newProject()
-      .then(() => {
-        window.clearTimeout(hangTimer);
-        setStatus('Ready');
-      })
-      .catch((error) => {
-        window.clearTimeout(hangTimer);
-        console.error(error);
-        setStatus(`Load failed: ${error?.message ?? error}`);
-      });
+    .newProject()
+    .then(() => {
+      window.clearTimeout(hangTimer);
+      setStatus('Ready');
+    })
+    .catch((error) => {
+      window.clearTimeout(hangTimer);
+      console.error(error);
+      setStatus(`Load failed: ${error?.message ?? error}`);
+    });
 }
 
 try {

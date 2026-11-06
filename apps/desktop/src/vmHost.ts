@@ -4,8 +4,19 @@ import * as storageModule from 'scratch-storage';
 import * as audioModule from 'scratch-audio';
 import * as svgModule from 'scratch-svg-renderer';
 import * as jszipModule from 'jszip';
-import { emptyProjectJson, BLANK_BACKDROP_ID, BLANK_BACKDROP_SVG } from '@codewarp/core';
+import { emptyProjectJson, emptyProjectAssets } from '@codewarp/core';
 import { interop } from './interop';
+import { md5 } from './md5';
+
+/** An image file to turn into a sprite's first costume. */
+export interface SpriteImage {
+  data: Uint8Array;
+  /** File extension: svg, png, jpg. */
+  ext: 'svg' | 'png' | 'jpg';
+  /** Size in pixels (for svg, its natural size); the rotation center is put in the middle. */
+  width: number;
+  height: number;
+}
 
 // Resolved when the VM is created (not at import time) so that a failure shows up in the status bar.
 function resolveScratchClasses() {
@@ -55,9 +66,65 @@ export class VmHost {
     const JSZip: any = interop(jszipModule, 'JSZip');
     const zip = new JSZip();
     zip.file('project.json', emptyProjectJson());
-    zip.file(`${BLANK_BACKDROP_ID}.svg`, BLANK_BACKDROP_SVG);
+    for (const [fileName, content] of Object.entries(emptyProjectAssets())) {
+      zip.file(fileName, content);
+    }
     const bytes: ArrayBuffer = await zip.generateAsync({ type: 'arraybuffer' });
     await this.load(bytes);
+  }
+
+  /**
+   * Add a sprite whose only costume is the given image. The sprite is built as an in-memory
+   * .sprite3 file (a zip with sprite.json and the image) because scratch-vm only reads costume
+   * assets from a zip or from Scratch's servers.
+   */
+  async addSpriteFromImage(name: string, image: SpriteImage): Promise<void> {
+    const JSZip: any = interop(jszipModule, 'JSZip');
+    const assetId = md5(image.data);
+    const md5ext = `${assetId}.${image.ext}`;
+    const isBitmap = image.ext !== 'svg';
+
+    const costume: Record<string, unknown> = {
+      assetId,
+      name: 'costume1',
+      md5ext,
+      dataFormat: image.ext,
+      rotationCenterX: Math.round(image.width / 2),
+      rotationCenterY: Math.round(image.height / 2),
+    };
+    if (isBitmap) costume.bitmapResolution = 1;
+
+    const spriteJson = {
+      isStage: false,
+      name,
+      variables: {},
+      lists: {},
+      broadcasts: {},
+      blocks: {},
+      comments: {},
+      currentCostume: 0,
+      costumes: [costume],
+      sounds: [],
+      volume: 100,
+      layerOrder: 1,
+      visible: true,
+      x: 0,
+      y: 0,
+      size: 100,
+      direction: 90,
+      draggable: false,
+      rotationStyle: 'all around',
+    };
+
+    const zip = new JSZip();
+    zip.file('sprite.json', JSON.stringify(spriteJson));
+    zip.file(md5ext, image.data);
+    const bytes: ArrayBuffer = await zip.generateAsync({ type: 'arraybuffer' });
+    await this.vm.addSprite(bytes);
+  }
+
+  deleteSprite(targetId: string): void {
+    this.vm.deleteSprite(targetId);
   }
 
   /** Serialize the current project to .sb3 bytes. */

@@ -52,10 +52,28 @@ export interface Sb3Project {
  * and must be changed together with it (the file is stored in the .sb3 as `<id>.svg`).
  */
 export const BLANK_BACKDROP_SVG =
-    '<svg version="1.1" width="480" height="360" viewBox="0 0 480 360" xmlns="http://www.w3.org/2000/svg"><rect width="480" height="360" fill="#ffffff"/></svg>';
+  '<svg version="1.1" width="480" height="360" viewBox="0 0 480 360" xmlns="http://www.w3.org/2000/svg"><rect width="480" height="360" fill="#ffffff"/></svg>';
 export const BLANK_BACKDROP_ID = 'a416bbdcf42506ac7299d5e160413479';
 
-/** A stage-only project with a blank backdrop. */
+/**
+ * An original sprite shape (an arrowhead pointing right, matching Scratch's default direction of 90).
+ * Drawn at 64x64 with the rotation center in the middle. New sprites reuse it with other colors.
+ */
+export function spriteShapeSvg(fill: string, stroke: string): string {
+  return `<svg version="1.1" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><path d="M10 12 L56 32 L10 52 L22 32 Z" fill="${fill}" stroke="${stroke}" stroke-width="3" stroke-linejoin="round"/></svg>`;
+}
+export const DEFAULT_SPRITE_SVG = spriteShapeSvg('#6d7cff', '#3b46b5');
+export const DEFAULT_SPRITE_ID = '43068cdef9880f905e2c3d941387d5dd';
+
+/** Files (name -> text) that the empty project's project.json refers to. They go in the .sb3 zip. */
+export function emptyProjectAssets(): Record<string, string> {
+  return {
+    [`${BLANK_BACKDROP_ID}.svg`]: BLANK_BACKDROP_SVG,
+    [`${DEFAULT_SPRITE_ID}.svg`]: DEFAULT_SPRITE_SVG,
+  };
+}
+
+/** A project with a blank backdrop and one sprite, so blocks can run right away. */
 export function emptyProject(): Sb3Project {
   return {
     targets: [
@@ -85,6 +103,36 @@ export function emptyProject(): Sb3Project {
         videoTransparency: 50,
         videoState: 'on',
         textToSpeechLanguage: null,
+      },
+      {
+        isStage: false,
+        name: 'Sprite1',
+        variables: {},
+        lists: {},
+        broadcasts: {},
+        blocks: {},
+        comments: {},
+        currentCostume: 0,
+        costumes: [
+          {
+            assetId: DEFAULT_SPRITE_ID,
+            name: 'costume1',
+            md5ext: `${DEFAULT_SPRITE_ID}.svg`,
+            dataFormat: 'svg',
+            rotationCenterX: 32,
+            rotationCenterY: 32,
+          },
+        ],
+        sounds: [],
+        volume: 100,
+        layerOrder: 1,
+        visible: true,
+        x: 0,
+        y: 0,
+        size: 100,
+        direction: 90,
+        draggable: false,
+        rotationStyle: 'all around',
       },
     ],
     monitors: [],

@@ -1,5 +1,9 @@
 import { TOOLBOX_XML } from './toolbox';
 import { showPrompt } from './prompt';
+import { showMakeBlock } from './customBlock';
+
+// Workspace event types that can change what the dynamic palette categories should show.
+const REFRESH_EVENTS = new Set(['create', 'delete', 'change', 'var_create', 'var_delete', 'var_rename']);
 
 // Assigned in the BlocksEditor constructor (not at import time) so failures show in the status bar.
 let ScratchBlocks: any;
@@ -9,7 +13,7 @@ function resolveBlocks(): any {
   const blockly = (window as any).Blockly;
   if (!blockly || typeof blockly.inject !== 'function') {
     throw new Error(
-        'scratch-blocks did not load: window.Blockly is missing. Check the Network tab for 404s on /scratch-blocks/*.js',
+      'scratch-blocks did not load: window.Blockly is missing. Check the Network tab for 404s on /scratch-blocks/*.js',
     );
   }
   return blockly;
@@ -27,6 +31,8 @@ export class BlocksEditor {
     ScratchBlocks = resolveBlocks();
     // Electron has no window.prompt, so use our own dialog for "Make a Variable" etc.
     ScratchBlocks.prompt = showPrompt;
+    // "Make a Block" and right-click > Edit on custom blocks call this; scratch-blocks has no UI for it.
+    ScratchBlocks.Procedures.externalProcedureDefCallback = showMakeBlock;
     this.workspace = ScratchBlocks.inject(host, {
       media: './blocks-media/',
       toolbox: TOOLBOX_XML,
@@ -45,6 +51,34 @@ export class BlocksEditor {
 
     this.vm.addListener('workspaceUpdate', (data: { xml: string }) => this.onWorkspaceUpdate(data));
     window.addEventListener('resize', () => this.resize());
+
+    // Highlight scripts and blocks while they run (clicking a block runs its stack).
+    this.vm.addListener('SCRIPT_GLOW_ON', (data: { id: string }) => this.workspace.glowStack(data.id, true));
+    this.vm.addListener('SCRIPT_GLOW_OFF', (data: { id: string }) => this.workspace.glowStack(data.id, false));
+    this.vm.addListener('BLOCK_GLOW_ON', (data: { id: string }) => this.workspace.glowBlock(data.id, true));
+    this.vm.addListener('BLOCK_GLOW_OFF', (data: { id: string }) => this.workspace.glowBlock(data.id, false));
+
+    // The palette's Variables and My Blocks categories are built dynamically. Rebuild the open
+    // category when blocks, variables or custom blocks change, or new entries only show up after
+    // switching categories.
+    this.workspace.addChangeListener((event: any) => {
+      if (REFRESH_EVENTS.has(event?.type)) this.scheduleToolboxRefresh();
+    });
+  }
+
+  private refreshTimer: number | undefined;
+
+  private scheduleToolboxRefresh(): void {
+    window.clearTimeout(this.refreshTimer);
+    this.refreshTimer = window.setTimeout(() => {
+      try {
+        if (typeof this.workspace.refreshToolboxSelection_ === 'function') {
+          this.workspace.refreshToolboxSelection_();
+        }
+      } catch (error) {
+        console.warn('Toolbox refresh failed', error);
+      }
+    }, 50);
   }
 
   private onWorkspaceUpdate(data: { xml: string }): void {

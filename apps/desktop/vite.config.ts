@@ -27,6 +27,15 @@ export default defineConfig({
       ],
     }),
   ],
+  // scratch-vm now comes from packages/scratch-vm (a symlinked workspace package). Vite does not
+  // pre-bundle linked packages, so their CommonJS code would load as an empty module. Listing
+  // it here forces the CommonJS -> ESM conversion, exactly like an npm-installed package.
+  optimizeDeps: { include: ['scratch-vm'] },
   server: { port: 5173, strictPort: true },
-  build: { outDir: 'dist', emptyOutDir: true },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    // Same reason, for production builds (npm run dist).
+    commonjsOptions: { include: [/scratch-vm/, /node_modules/] },
+  },
 });

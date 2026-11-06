@@ -72,8 +72,12 @@ export function showPrompt(
 
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
-    input.focus();
-    input.select();
+    // Focus after the click that opened the dialog has finished; focusing inside the same
+    // event loses focus again (Blockly handles the mouse-up after our callback runs).
+    window.setTimeout(() => {
+        input.focus();
+        input.select();
+    }, 50);
 
     const close = (result: string | null) => {
         overlay.remove();
@@ -89,7 +93,11 @@ export function showPrompt(
         close(input.value);
     });
     cancel.addEventListener('click', () => close(null));
-    overlay.addEventListener('keydown', (e) => {
+    // Keep keystrokes away from Blockly's global shortcuts (it listens on the document).
+    dialog.addEventListener('keydown', (e) => {
+        e.stopPropagation();
         if (e.key === 'Escape') close(null);
     });
+    dialog.addEventListener('keyup', (e) => e.stopPropagation());
+    dialog.addEventListener('keypress', (e) => e.stopPropagation());
 }
