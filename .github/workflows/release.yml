@@ -74,11 +74,17 @@ jobs:
             --config.electronVersion="$ELECTRON_VERSION" \
             --config.extraMetadata.version="$VERSION"
 
+      - name: Package the collaboration server
+        env:
+          CODEWARP_VERSION: ${{ steps.version.outputs.version }}
+        run: npm run server:export
+
       - name: Collect files
         working-directory: apps/desktop/release
         run: |
           mkdir -p ../../../out
           cp -v *.AppImage *.deb *.rpm ../../../out/
+          cp -v ../../../packages/server/dist/codewarp-server-*.tar.gz ../../../out/
           cd ../../../out
           sha256sum * > SHA256SUMS.txt
           ls -la

@@ -9,6 +9,8 @@ import { SoundsPanel } from './sounds';
 import { pickFile } from './files';
 import { Collab } from './collab';
 import { CollabUi } from './collabUi';
+import { SettingsPanel } from './settingsPanel';
+import { applySavedTheme } from './settings';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -68,6 +70,7 @@ const SHAPE_COLORS: [string, string][] = [
 ];
 
 function boot(): void {
+  applySavedTheme();
   setStatus('Creating VM…');
   const canvas = $<HTMLCanvasElement>('stage');
   const host = new VmHost(canvas);
@@ -97,10 +100,12 @@ function boot(): void {
 
   const costumes = new CostumesPanel($('pane-costumes'), host, setStatus);
   const sounds = new SoundsPanel($('pane-sounds'), host, setStatus);
+  new SettingsPanel($('pane-settings'));
   const tabs = {
     code: { tab: $('tab-code'), pane: $('pane-code') },
     costumes: { tab: $('tab-costumes'), pane: $('pane-costumes') },
     sounds: { tab: $('tab-sounds'), pane: $('pane-sounds') },
+    settings: { tab: $('tab-settings'), pane: $('pane-settings') },
   };
   type TabName = keyof typeof tabs;
   function showTab(name: TabName): void {

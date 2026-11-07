@@ -21,7 +21,8 @@ if (server.includes('core/src')) throw new Error('Export left a monorepo import 
 writeFileSync(join(folder, 'server.ts'), server);
 cpSync(join(pkgDir, '..', 'core', 'src', 'rtc.ts'), join(folder, 'rtc.ts'));
 
-const version = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')).version;
+// CI sets CODEWARP_VERSION so the archive carries the release version.
+const version = process.env.CODEWARP_VERSION || JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')).version;
 writeFileSync(
   join(folder, 'package.json'),
   JSON.stringify(
@@ -89,7 +90,8 @@ systemctl enable --now codewarp-collab
 curl http://127.0.0.1:8787/health      # {"ok":true,...}
 \`\`\`
 
-Put a TLS proxy in front (see Caddyfile.example) and set that address in the app (packages/core/src/config.ts).
+Put a TLS proxy in front (see Caddyfile.example). In the app, open Settings > Collaboration server, enter
+your address (for example wss://collab.example.com) and press Save. No rebuild is needed.
 Open only ports 80 and 443 in the firewall; the server itself listens on 127.0.0.1.
 `,
 );

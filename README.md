@@ -26,7 +26,24 @@ A custom desktop app for making Scratch projects, with two ways to code that you
 
 ## Getting started
 
-Build and install instructions will be added as the project develops.
+Download the latest build from the [Releases](../../releases) page:
+
+| File | For |
+|---|---|
+| `Codewarp-<version>-x86_64.AppImage` | Any Linux distribution. Make it executable (`chmod +x`) and run it. |
+| `Codewarp-<version>-amd64.deb` | Debian, Ubuntu and relatives (`sudo apt install ./file.deb`). |
+| `Codewarp-<version>-x86_64.rpm` | Fedora, openSUSE and relatives (`sudo dnf install ./file.rpm`). |
+| `codewarp-server-<version>.tar.gz` | The collaboration server, only needed if you host your own (see below). |
+| `SHA256SUMS.txt` | Checksums to verify the downloads. |
+
+Numbered releases (`v1.2.3`) are the stable ones. The `dev` pre-release is rebuilt from the latest commit on every push to `main` and can be broken.
+
+### Settings
+
+Open the **Settings** tab (top right of the editor) to:
+
+- **Change the colours.** Pick a preset or set the accent, background, panel and text colours yourself.
+- **Change the collaboration server.** The project server is the default. Enter another `ws://` or `wss://` address and press Save, use **Test connection** to check it, or press **Use default server** to go back. The change applies the next time you join a room.
 
 ## Contributing
 
@@ -48,3 +65,194 @@ This summary is not a substitute for the license. See [LICENSE](LICENSE) for det
 ## Disclaimer
 
 Codewarp is an independent project. It is not affiliated with, endorsed by, or sponsored by the Scratch Foundation, the Scratch Team, or MIT. "Scratch" is a project of the Scratch Foundation, in collaboration with the Lifelong Kindergarten Group at the MIT Media Lab. It is available for free at <https://scratch.mit.edu>.
+
+---
+
+# Collaboration server setup
+
+Real-time collaboration needs a small relay server. The app uses the project's server by default, so you only need this to **host your own**. The server only relays edits between people in the same room; it never stores projects.
+
+**Requirements:** a Linux server with Node.js **22.18 or newer**, and a domain name pointing at it (for `wss://`, the encrypted connection the app needs on the internet).
+
+## 1. Get the server
+
+Download `codewarp-server-<version>.tar.gz` from the [Releases](../../releases) page and unpack it:
+
+```bash
+tar xzf codewarp-server-*.tar.gz
+cd codewarp-server
+```
+
+(To build it yourself instead, run `npm run server:export` in a clone of the repository. The archive appears in `packages/server/dist/`.)
+
+## 2. Run it on a VPS with systemd
+
+```bash
+# as root, or with sudo
+useradd --system --home /opt/codewarp-server codewarp
+mkdir -p /opt/codewarp-server
+cp -r ./* /opt/codewarp-server/
+cd /opt/codewarp-server
+npm install --omit=dev
+chown -R codewarp: /opt/codewarp-server
+cp codewarp-collab.service /etc/systemd/system/
+systemctl enable --now codewarp-collab
+curl http://127.0.0.1:8787/health      # {"ok":true,"rooms":0}
+```
+
+The server listens on `127.0.0.1:8787`. Change `PORT` and `HOST` in the service file if you need to.
+
+## 3. Add HTTPS with a reverse proxy
+
+The app connects with `wss://`, so put a proxy with a certificate in front of the server.
+
+**Caddy** (gets the certificate for you):
+
+```
+collab.example.com {
+    reverse_proxy 127.0.0.1:8787
+}
+```
+
+**nginx**, on a domain you already serve (for example next to another site). Add this inside the existing `server { ... }` block that has `listen 443 ssl`:
+
+```nginx
+location = /collab {
+    proxy_pass http://127.0.0.1:8787/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_read_timeout 3600s;
+}
+location /collab/ {
+    proxy_pass http://127.0.0.1:8787/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_read_timeout 3600s;
+}
+```
+
+Then run `nginx -t && systemctl reload nginx`. Check it with `curl https://your-domain/collab/health`. The address for the app is then `wss://your-domain/collab`.
+
+Open only ports 80 and 443 in the firewall. The server itself does not need to be reachable from outside.
+
+## 4. Point the app at it
+
+In Codewarp, open **Settings > Collaboration server**, enter your address (for example `wss://collab.example.com`), press **Test connection**, then **Save**. Everyone who should join your rooms needs to set the same address.
+
+To make your server the default in your own builds, change `COLLAB_SERVER_URL` in `packages/core/src/config.ts`.
+
+## Hosting it in Pterodactyl
+
+If you run a game panel, the server fits in a generic **Node.js** egg (Node 22 image):
+
+1. Upload `server.ts`, `rtc.ts` and `package.json` from the archive, plus an `index.js` containing:
+   ```js
+   process.env.PORT ??= process.env.SERVER_PORT || '8787';
+   process.env.HOST ??= '0.0.0.0';
+   await import('./server.ts');
+   ```
+2. Egg settings: *User Uploaded Files* `0`, *Main file* `index.js`, *Additional Node packages* `ws`.
+3. Proxy your domain to the allocated port as in step 3. Containers are usually reached on the Docker gateway address (for example `172.18.0.1:PORT`) rather than `127.0.0.1`.
+
+## Limits
+
+12 people per room, 500 rooms, 64 MB per message (a project snapshot), 600 messages per second per person. Anyone who knows a room name can join it, so use hard-to-guess room names until accounts are linked.
+
+---
+
+# Development
+
+## Layout
+
+```
+codewarp/
+  packages/core/        shared TypeScript: project model, sync protocol (rtc.ts), server address
+  packages/server/      the collaboration server (plain Node, TypeScript run directly)
+  packages/scratch-vm/  vendored scratch-vm, built with webpack
+  apps/desktop/         Electron + Vite + TypeScript app
+    electron/           main + preload (plain .cjs, no build step)
+    src/vmHost.ts       scratch-vm + renderer + audio + storage
+    src/blocksEditor.ts scratch-blocks workspace wired to the VM
+    src/toolbox.ts      the block palettes (sprite and stage)
+    src/menus.ts        dropdowns that list costumes, sounds and sprites
+    src/spritePanel.ts  the sprite and stage selector
+    src/collab.ts       real-time collaboration client
+    src/settings*.ts    the Settings tab: colours and server address
+    src/main.ts         UI wiring
+```
+
+The project JSON (`project.json` inside an `.sb3`) is the single source of truth. The blocks editor and the future text syntaxes are views of it.
+
+## Requirements
+
+- Node.js **22.18 or newer** and npm
+- Git
+- To build the rpm: `rpm-build` (`sudo dnf install rpm-build`; on Debian/Ubuntu `sudo apt install rpm`)
+
+## Set up
+
+```bash
+git clone https://github.com/Orrin-Dev/codewarp.git
+cd codewarp
+HUSKY=0 npm install
+(cd packages/scratch-vm && npx webpack)     # builds the vendored scratch-vm once
+```
+
+The webpack step may print warnings about `scratch-storage` and `scratch-render` for its demo page. They are harmless as long as `scratch-vm.js` is produced.
+
+## Run
+
+```bash
+npm run dev          # Vite + Electron
+```
+
+`npm run dev` also works in a plain browser at http://localhost:5173 (Open and Save fall back to a file picker and a download), which is handy for debugging.
+
+If port 5173 is already in use, a previous dev server is still running: `pkill -f vite`.
+
+### Testing collaboration locally
+
+```bash
+npm run server       # the collaboration server on ws://localhost:8787
+npm run dev          # in a second terminal
+```
+
+In the app open **Settings > Collaboration server** and press **Use this computer**. To try it with two people, start a second Electron window and join the same room name in both.
+
+## Useful commands
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Run the app with hot reload |
+| `npm run build` | Production build of the app (`apps/desktop/dist`) |
+| `npm run typecheck` | Typecheck core, desktop and server |
+| `npm run dist` | Build the AppImage, deb and rpm into `apps/desktop/release/` |
+| `npm run server` | Run the collaboration server locally |
+| `npm run server:export` | Build `packages/server/dist/codewarp-server-<version>.tar.gz` |
+
+## Releases (GitHub Actions)
+
+- **Production:** push a version tag, for example `git tag v0.2.0 && git push origin v0.2.0`. A tag with a dash (`v0.2.0-beta.1`) becomes a pre-release.
+- **Dev:** every push to `main` replaces the pre-release called `dev` with a fresh build, numbered `<version>-dev.<run>`.
+- Each release contains the AppImage, deb, rpm, the collaboration server archive and `SHA256SUMS.txt`.
+- Pull requests and other branches only run a typecheck and build (`ci.yml`).
+- Keep `version` in `apps/desktop/package.json` in step with your tags, and commit `package-lock.json` so installs in CI match yours.
+
+Package names and the deb/rpm metadata (homepage, maintainer, icon) are in the `build` section of `apps/desktop/package.json`.
+
+## Notes
+
+- The Scratch packages must be compatible with each other. `scratch-vm` is vendored in `packages/scratch-vm`; `scratch-blocks` is pinned to 1.3.0 and loaded as classic `<script>` tags (Vite warns about this, harmlessly).
+- `scratch-vm` and `scratch-render` are AGPL-3.0 and `scratch-blocks` is Apache-2.0. Check their licenses before redistributing. Don't use the Scratch name, logo or cat.
+- Scratch's cloud, login and project-hosting hooks are not included. Account linking will replace them.
+
+## Roadmap
+
+1. Text syntaxes (C#-flavoured and Python-flavoured) with a shared block table.
+2. Scratch account linking (replaces the typed name in collaboration).
+3. GitHub project storage.
+4. More palette work: extensions, and the remaining editor polish.

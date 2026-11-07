@@ -1,4 +1,5 @@
-import { TOOLBOX_XML } from './toolbox';
+import { STAGE_TOOLBOX_XML, TOOLBOX_XML } from './toolbox';
+import { installProjectMenus } from './menus';
 import { showPrompt } from './prompt';
 import { showMakeBlock } from './customBlock';
 
@@ -55,11 +56,12 @@ export class BlocksEditor {
       const monitored = this.vm.runtime.monitorBlocks.getBlock(blockId);
       return monitored ? Boolean(monitored.isMonitored) : false;
     };
+    installProjectMenus(ScratchBlocks, this.vm);
     this.workspace = ScratchBlocks.inject(host, {
       media: './blocks-media/',
       toolbox: TOOLBOX_XML,
       zoom: { controls: true, wheel: true, startScale: 0.675 },
-      grid: { spacing: 40, length: 2, colour: '#ddd' },
+      grid: { spacing: 40, length: 2, colour: '#2e3340' },
       comments: true,
       collapse: false,
       sounds: false,
@@ -210,6 +212,7 @@ export class BlocksEditor {
   }
 
   private refreshTimer: number | undefined;
+  private stageToolbox = false;
 
   private scheduleToolboxRefresh(): void {
     window.clearTimeout(this.refreshTimer);
@@ -224,7 +227,20 @@ export class BlocksEditor {
     }, 50);
   }
 
+  /** The stage gets a smaller palette than a sprite (no motion, no talking, no touching...). */
+  private syncToolboxToTarget(): void {
+    const stage = Boolean(this.vm.editingTarget?.isStage);
+    if (stage === this.stageToolbox) return;
+    this.stageToolbox = stage;
+    try {
+      this.workspace.updateToolbox(stage ? STAGE_TOOLBOX_XML : TOOLBOX_XML);
+    } catch (error) {
+      console.warn('Could not switch the block palette', error);
+    }
+  }
+
   private onWorkspaceUpdate(data: { xml: string }): void {
+    this.syncToolboxToTarget();
     // Detach the VM listener while loading so loading doesn't echo back as edits.
     this.workspace.removeChangeListener(this.vm.blockListener);
     // Switch events off while loading: reloading a sprite is not an edit, and collaborators must not see it as one.

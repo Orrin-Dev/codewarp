@@ -21,8 +21,8 @@ scp packages/server/dist/codewarp-server-*.tar.gz you@your-vps:~
 ```
 
 The archive holds the server, a systemd unit, a Caddy example and install steps (see the README inside it).
-After it is running, set its address once in `packages/core/src/config.ts` (`COLLAB_SERVER_URL`). The app uses
-that address in release builds, and `ws://localhost:8787` during `npm run dev`.
+After it is running, open the app's Settings tab, enter the address under Collaboration server and press Save.
+To make it the default for everyone who installs your build, set `COLLAB_SERVER_URL` in `packages/core/src/config.ts`.
 
 ## On your VPS (by hand)
 
@@ -52,7 +52,7 @@ User=codewarp
 WantedBy=multi-user.target
 ```
 
-Then `sudo systemctl enable --now codewarp-collab`. In the app, join with `wss://collab.example.com`.
+Then `sudo systemctl enable --now codewarp-collab`. In the app, set `wss://collab.example.com` under Settings > Collaboration server.
 
 ## Limits
 
