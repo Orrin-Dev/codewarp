@@ -54,9 +54,17 @@
         "deb",
         "rpm"
       ],
-      "maintainer": "Codewarp contributors"
+      "maintainer": "Codewarp contributors",
+      "executableName": "codewarp"
     },
-    "npmRebuild": false
+    "npmRebuild": false,
+    "artifactName": "Codewarp-${version}-${arch}.${ext}",
+    "deb": {
+      "packageName": "codewarp"
+    },
+    "rpm": {
+      "packageName": "codewarp"
+    }
   },
   "homepage": "https://github.com/Orrin-Dev/codewarp",
   "license": "MIT"
