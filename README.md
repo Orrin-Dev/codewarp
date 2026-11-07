@@ -153,14 +153,10 @@ To make your server the default in your own builds, change `COLLAB_SERVER_URL` i
 
 If you run a game panel, the server fits in a generic **Node.js** egg (Node 22 image):
 
-1. Upload `server.ts`, `rtc.ts` and `package.json` from the archive, plus an `index.js` containing:
-   ```js
-   process.env.PORT ??= process.env.SERVER_PORT || '8787';
-   process.env.HOST ??= '0.0.0.0';
-   await import('./server.ts');
-   ```
+1. Upload all the files from the archive (`server.ts`, `rtc.ts`, `index.js`, `package.json`). `index.js` is included for this: it starts the server on the panel's port.
 2. Egg settings: *User Uploaded Files* `0`, *Main file* `index.js`, *Additional Node packages* `ws`.
-3. Proxy your domain to the allocated port as in step 3. Containers are usually reached on the Docker gateway address (for example `172.18.0.1:PORT`) rather than `127.0.0.1`.
+3. To update later, upload the new `server.ts` and `rtc.ts` from a newer archive over the old ones and restart the server.
+4. Proxy your domain to the allocated port as in step 3. Containers are usually reached on the Docker gateway address (for example `172.18.0.1:PORT`) rather than `127.0.0.1`.
 
 ## Limits
 

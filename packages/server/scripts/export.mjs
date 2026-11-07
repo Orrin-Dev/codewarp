@@ -40,6 +40,17 @@ writeFileSync(
   ) + '\n',
 );
 
+// For game panels such as Pterodactyl (generic Node.js egg, "Main file" = index.js): they pass the port as
+// SERVER_PORT, and their .ts handling does not suit this server, so start it through a plain .js file.
+writeFileSync(
+  join(folder, 'index.js'),
+  `// Starts the server on a game panel (Pterodactyl). Elsewhere, run "node server.ts" directly.
+process.env.PORT ??= process.env.SERVER_PORT || '8787';
+process.env.HOST ??= '0.0.0.0';
+await import('./server.ts');
+`,
+);
+
 writeFileSync(
   join(folder, 'codewarp-collab.service'),
   `[Unit]
@@ -89,6 +100,12 @@ cp codewarp-collab.service /etc/systemd/system/
 systemctl enable --now codewarp-collab
 curl http://127.0.0.1:8787/health      # {"ok":true,...}
 \`\`\`
+
+## On a game panel (Pterodactyl)
+
+Upload everything in this folder (server.ts, rtc.ts, index.js, package.json) to a generic Node.js server (Node 22 image).
+Egg settings: User Uploaded Files = 0, Main file = index.js, Additional Node packages = ws. Then proxy your domain to the
+server's port. To update later, upload the new server.ts and rtc.ts over the old ones and restart.
 
 Put a TLS proxy in front (see Caddyfile.example). In the app, open Settings > Collaboration server, enter
 your address (for example wss://collab.example.com) and press Save. No rebuild is needed.

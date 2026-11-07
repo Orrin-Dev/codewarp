@@ -13,11 +13,15 @@ function isTypingTarget(target: EventTarget | null): boolean {
 export function attachStageInput(canvas: HTMLCanvasElement, vm: any): void {
   const mouseData = (event: MouseEvent, extra: Record<string, unknown> = {}) => {
     const rect = canvas.getBoundingClientRect();
+    // The stage can be scaled up with a CSS transform (full screen). The renderer works in the canvas's own
+    // unscaled size, so convert the position into that size or clicks land in the wrong place.
+    const ratioX = rect.width > 0 ? canvas.offsetWidth / rect.width : 1;
+    const ratioY = rect.height > 0 ? canvas.offsetHeight / rect.height : 1;
     return {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-      canvasWidth: rect.width,
-      canvasHeight: rect.height,
+      x: (event.clientX - rect.left) * ratioX,
+      y: (event.clientY - rect.top) * ratioY,
+      canvasWidth: canvas.offsetWidth,
+      canvasHeight: canvas.offsetHeight,
       ...extra,
     };
   };

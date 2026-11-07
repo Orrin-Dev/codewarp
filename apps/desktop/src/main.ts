@@ -85,25 +85,28 @@ function boot(): void {
   // ---- Full screen stage -------------------------------------------------
 
   const frame = $('stage-frame');
+  const isFull = (): boolean => frame.classList.contains('is-fullscreen');
   const updateFullscreen = (): void => {
-    const full = document.fullscreenElement === frame;
-    // The stage is scaled up as a whole (picture, monitors, test-run video) to fit the screen.
+    const full = isFull();
+    // The stage is scaled up as a whole (picture, monitors, test-run video) to fit the window.
     const scale = full ? Math.min(window.innerWidth / 480, window.innerHeight / 360) : 1;
     frame.style.setProperty('--stage-scale', String(scale));
     host.setStageResolution(scale);
     $('btn-fullscreen').textContent = full ? '⛶ Leave full screen' : '⛶ Full screen';
   };
   const toggleFullscreen = (): void => {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void frame.requestFullscreen().catch((error) => setStatus(`Could not go full screen: ${error?.message ?? error}`));
+    frame.classList.toggle('is-fullscreen');
+    updateFullscreen();
   };
   $('btn-fullscreen').addEventListener('click', toggleFullscreen);
   $('fs-exit').addEventListener('click', toggleFullscreen);
   $('fs-flag').addEventListener('click', () => $('btn-flag').click());
   $('fs-stop').addEventListener('click', () => $('btn-stop').click());
-  document.addEventListener('fullscreenchange', updateFullscreen);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isFull()) toggleFullscreen();
+  });
   window.addEventListener('resize', () => {
-    if (document.fullscreenElement === frame) updateFullscreen();
+    if (isFull()) updateFullscreen();
   });
 
   // ---- Collaboration -----------------------------------------------------

@@ -100,17 +100,32 @@ button.active { background: var(--accent); border-color: var(--accent); color: #
 .stage-fs-button { margin-left: auto; }
 
 .stage-frame { position: relative; width: 480px; height: 360px; }
+.stage-holder { position: relative; width: 100%; height: 100%; }
 .stage-fs-bar { display: none; }
-.stage-frame:fullscreen {
-  width: 100vw;
-  height: 100vh;
+/* "Full screen" fills the app window (not the whole screen). The frame keeps its size so the panel does not jump. */
+.stage-frame.is-fullscreen .stage-holder {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
   background: #000;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.stage-frame:fullscreen .stage-wrap { transform: scale(var(--stage-scale, 1)); transform-origin: center; }
-.stage-frame:fullscreen .stage { border: 0; border-radius: 0; }
+.stage-frame.is-fullscreen .stage-wrap { flex: none; transform: scale(var(--stage-scale, 1)); transform-origin: center; }
+.stage-frame.is-fullscreen .stage { border: 0; border-radius: 0; }
+.stage-frame.is-fullscreen .stage-fs-bar {
+  display: flex;
+  gap: 6px;
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+.stage-frame.is-fullscreen .stage-fs-bar:hover { opacity: 1; }
+.stage { border: 0; border-radius: 0; }
 .stage-frame:fullscreen .stage-fs-bar {
   display: flex;
   gap: 6px;
