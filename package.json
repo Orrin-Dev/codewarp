@@ -11,6 +11,8 @@
     "dev": "npm run dev -w @codewarp/desktop",
     "build": "npm run build -w @codewarp/desktop",
     "dist": "npm run dist -w @codewarp/desktop",
-    "typecheck": "npm run typecheck -w @codewarp/core && npm run typecheck -w @codewarp/desktop"
+    "typecheck": "npm run typecheck -w @codewarp/core && npm run typecheck -w @codewarp/desktop && npm run typecheck -w @codewarp/server",
+    "server": "npm start -w @codewarp/server",
+    "server:export": "npm run export -w @codewarp/server"
   }
 }

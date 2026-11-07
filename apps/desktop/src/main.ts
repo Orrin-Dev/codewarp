@@ -7,6 +7,8 @@ import { attachStageInput } from './stageInput';
 import { CostumesPanel } from './costumes';
 import { SoundsPanel } from './sounds';
 import { pickFile } from './files';
+import { Collab } from './collab';
+import { CollabUi } from './collabUi';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -77,6 +79,20 @@ function boot(): void {
   attachStageInput(canvas, host.vm);
   new SpritePanel($('sprite-list'), $('sprite-props'), host, (message) => setStatus(message));
 
+  // ---- Collaboration -----------------------------------------------------
+
+  let collabUi: CollabUi | null = null;
+  const collab = new Collab(
+    host,
+    editor,
+    {
+      onChange: () => collabUi?.render(),
+      onMessage: (text) => setStatus(text),
+    },
+    document.querySelector('.stage-wrap') as HTMLElement,
+  );
+  collabUi = new CollabUi(collab, $<HTMLButtonElement>('btn-collab'), $('people'), setStatus);
+
   // ---- Tabs: Code / Costumes / Sounds -----------------------------------
 
   const costumes = new CostumesPanel($('pane-costumes'), host, setStatus);
@@ -139,13 +155,22 @@ function boot(): void {
 
   let projectName = 'project.sb3';
 
+  // Opening a different project while sharing one would leave everyone else out of step.
+  const blockedByCollab = (): boolean => {
+    if (collab.state === 'offline') return false;
+    setStatus('Leave the collaboration room before creating or opening a project');
+    return true;
+  };
+
   $('btn-new').addEventListener('click', async () => {
+    if (blockedByCollab()) return;
     await host.newProject();
     projectName = 'project.sb3';
     setStatus('New project');
   });
 
   $('btn-open').addEventListener('click', async () => {
+    if (blockedByCollab()) return;
     let picked: { name: string; data: Uint8Array } | null;
     if (window.codewarp) {
       picked = await window.codewarp.openProject();
@@ -181,8 +206,9 @@ function boot(): void {
 
   // ---- Run controls -----------------------------------------------------
 
-  $('btn-flag').addEventListener('click', () => host.greenFlag());
-  $('btn-stop').addEventListener('click', () => host.stopAll());
+  // In a collaboration room Run streams a live test to everyone; outside one it just runs.
+  $('btn-flag').addEventListener('click', () => collab.run());
+  $('btn-stop').addEventListener('click', () => collab.stop());
 
   // ---- Mode toggle (text mode is a read-only preview for now) -----------
 

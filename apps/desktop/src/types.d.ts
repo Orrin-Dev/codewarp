@@ -15,3 +15,8 @@ interface CodewarpBridge {
 interface Window {
   codewarp?: CodewarpBridge;
 }
+
+// Set by Vite.
+interface ImportMeta {
+  readonly env: { readonly DEV: boolean; readonly [key: string]: unknown };
+}

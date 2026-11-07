@@ -45,6 +45,8 @@ export class CostumesPanel {
   private loadedTargetId: string | null = null;
   private loadedIndex = -1;
   private loadToken = 0;
+  private loadedAssetId = '';
+  private lastSaveAt = 0;
 
   constructor(
     root: HTMLElement,
@@ -113,7 +115,14 @@ export class CostumesPanel {
     }
 
     if (this.paint.busy) return;
-    if (force || target.id !== this.loadedTargetId || target.currentCostume !== this.loadedIndex) {
+    const current = costumes[target.currentCostume];
+    let changedElsewhere = false;
+    if (current && String(current.assetId) !== this.loadedAssetId && target.id === this.loadedTargetId) {
+      // Our own save changes the asset a moment later; anything else (a collaborator's edit) must reload the canvas.
+      if (performance.now() - this.lastSaveAt < 2500) this.loadedAssetId = String(current.assetId);
+      else changedElsewhere = true;
+    }
+    if (force || changedElsewhere || target.id !== this.loadedTargetId || target.currentCostume !== this.loadedIndex) {
       void this.loadSelected();
     }
   }
@@ -301,6 +310,7 @@ export class CostumesPanel {
       if (token !== this.loadToken) return; // the selection changed while loading
       this.loadedTargetId = target.id;
       this.loadedIndex = index;
+      this.loadedAssetId = String(target.getCostumes()[index].assetId);
       this.paint.load(p.width, p.height, p.draw, p.cx, p.cy, p.res, !target.isStage);
     } catch (error) {
       console.error(error);
@@ -312,6 +322,7 @@ export class CostumesPanel {
   private save(result: PaintResult): void {
     const target = this.vm.editingTarget;
     if (!target || target.id !== this.loadedTargetId) return;
+    this.lastSaveAt = performance.now();
     this.vm.updateBitmap(this.loadedIndex, result.image, result.centerX, result.centerY, result.resolution);
   }
 }

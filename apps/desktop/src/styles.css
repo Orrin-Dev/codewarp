@@ -258,3 +258,34 @@ button.active { background: var(--accent); border-color: var(--accent); color: #
 .cw-wave { width: 100%; height: 100%; display: block; border: 1px solid var(--border); border-radius: 6px; cursor: crosshair; touch-action: none; }
 .cw-wave-info { padding: 0 12px 12px; color: var(--muted); font-size: 12px; }
 button.cw-recording { background: #c93a3a; border-color: #c93a3a; color: #fff; }
+
+/* ---- Collaboration ---- */
+.collab { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.people { display: flex; gap: 6px; flex-wrap: wrap; }
+.cw-person { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--cursor-color, var(--border)); color: var(--text); white-space: nowrap; }
+.cw-modal-field { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
+.cw-modal-hint { font-size: 12px; color: #ffab19; min-height: 0; }
+.cw-modal-hint:empty { display: none; }
+
+.cw-cursors { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 5; }
+.cw-cursor { position: absolute; left: 0; top: 0; will-change: transform; }
+.cw-cursor[hidden] { display: none; }
+.cw-cursor-arrow {
+  width: 0; height: 0;
+  border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 16px solid var(--cursor-color);
+  transform: rotate(-30deg); transform-origin: 50% 0;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
+}
+.cw-cursor-label {
+  position: absolute; left: 12px; top: 14px; padding: 1px 6px; border-radius: 4px;
+  background: var(--cursor-color); color: #fff; font-size: 11px; white-space: nowrap;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
+}
+
+/* ---- Live test run (viewer) ---- */
+.cw-stream { position: absolute; left: 0; top: 0; width: 480px; height: 360px; background: #000; }
+.cw-stream-banner {
+  position: absolute; left: 8px; top: 8px; z-index: 4; padding: 3px 9px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.65); color: #fff; font-size: 12px; pointer-events: none;
+}
+.cw-modal-server { word-break: break-all; }

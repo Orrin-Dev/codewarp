@@ -1,0 +1,23 @@
+{
+  "name": "@codewarp/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Codewarp real-time collaboration relay (rooms, edit ordering, presence)",
+  "scripts": {
+    "start": "node src/server.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "export": "node scripts/export.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.12",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

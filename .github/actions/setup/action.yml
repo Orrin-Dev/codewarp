@@ -1,0 +1,32 @@
+name: Set up Codewarp
+description: Node, dependencies, and the vendored scratch-vm build. Run after actions/checkout.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Cache downloads
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.npm
+          ~/.cache/electron
+          ~/.cache/electron-builder
+        key: downloads-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: downloads-${{ runner.os }}-
+
+    - name: Install dependencies
+      shell: bash
+      env:
+        HUSKY: '0'
+      run: |
+        # npm ci needs a committed package-lock.json; fall back to a plain install if there is none yet.
+        if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+    # packages/scratch-vm is vendored source; its dist/ is not committed, so build it here.
+    - name: Build scratch-vm
+      shell: bash
+      working-directory: packages/scratch-vm
+      run: npx webpack --bail

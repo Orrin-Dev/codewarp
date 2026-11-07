@@ -71,6 +71,8 @@ export class SoundsPanel {
   private selected = 0;
   private loadedTargetId: string | null = null;
   private loadedIndex = -1;
+  private loadedAssetId = '';
+  private saving = false;
 
   private pcm: Pcm | null = null;
   private past: Pcm[] = [];
@@ -224,7 +226,9 @@ export class SoundsPanel {
       this.showEditor(false);
       return;
     }
-    if (force || target.id !== this.loadedTargetId || this.selected !== this.loadedIndex) this.loadSelected();
+    // A collaborator may have replaced the sound being edited. Our own edits update loadedAssetId themselves.
+    const changedElsewhere = !this.saving && target.id === this.loadedTargetId && String(sounds[this.selected].assetId) !== this.loadedAssetId;
+    if (force || changedElsewhere || target.id !== this.loadedTargetId || this.selected !== this.loadedIndex) this.loadSelected();
   }
 
   private renderList(target: any, sounds: any[]): void {
@@ -320,6 +324,7 @@ export class SoundsPanel {
     this.stop();
     this.loadedTargetId = target.id;
     this.loadedIndex = this.selected;
+    this.loadedAssetId = String(target.getSounds()[this.selected]?.assetId ?? '');
     this.past = [];
     this.future = [];
     this.selection = null;
@@ -385,11 +390,15 @@ export class SoundsPanel {
     this.selection = selection;
     this.draw();
     this.updateControls();
+    this.saving = true; // updateSoundBuffer announces the change straight away; that is not a collaborator's edit
     try {
       this.vm.updateSoundBuffer(this.loadedIndex, this.toAudioBuffer(pcm), encodeWav(pcm));
+      this.loadedAssetId = String(this.vm.editingTarget.getSounds()[this.loadedIndex]?.assetId ?? this.loadedAssetId);
     } catch (error) {
       console.error(error);
       this.setStatus(`Could not save the edit: ${errorMessage(error)}`);
+    } finally {
+      this.saving = false;
     }
   }
 
