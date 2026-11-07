@@ -13,7 +13,8 @@
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "build": "vite build",
     "dist": "vite build && electron-builder --linux AppImage deb rpm",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist:win": "vite build && electron-builder --win nsis portable --x64"
   },
   "devDependencies": {
     "@codewarp/core": "*",
@@ -64,8 +65,33 @@
     },
     "rpm": {
       "packageName": "codewarp"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "artifactName": "Codewarp-Setup-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Codewarp-${version}-${arch}-portable.${ext}"
     }
   },
   "homepage": "https://github.com/Orrin-Dev/codewarp",
-  "license": "CC BY-NC-SA 4.0"
+  "license": "MIT"
 }

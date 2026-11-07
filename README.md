@@ -33,10 +33,14 @@ Download the latest build from the [Releases](../../releases) page:
 | `Codewarp-<version>-x86_64.AppImage` | Any Linux distribution. Make it executable (`chmod +x`) and run it. |
 | `Codewarp-<version>-amd64.deb` | Debian, Ubuntu and relatives (`sudo apt install ./file.deb`). |
 | `Codewarp-<version>-x86_64.rpm` | Fedora, openSUSE and relatives (`sudo dnf install ./file.rpm`). |
+| `Codewarp-Setup-<version>-x64.exe` | Windows installer (choose the install folder, adds a Start menu entry). |
+| `Codewarp-<version>-x64-portable.exe` | Windows portable version: no install, just run it. |
 | `codewarp-server-<version>.tar.gz` | The collaboration server, only needed if you host your own (see below). |
 | `SHA256SUMS.txt` | Checksums to verify the downloads. |
 
 Numbered releases (`v1.2.3`) are the stable ones. The `dev` pre-release is rebuilt from the latest commit on every push to `main` and can be broken.
+
+**Windows:** the `.exe` files are not code-signed, so Windows SmartScreen may say "Windows protected your PC". Choose **More info > Run anyway**. You can compare the file with `SHA256SUMS.txt` first (`certutil -hashfile <file> SHA256`).
 
 ### Settings
 
@@ -231,6 +235,7 @@ In the app open **Settings > Collaboration server** and press **Use this compute
 | `npm run build` | Production build of the app (`apps/desktop/dist`) |
 | `npm run typecheck` | Typecheck core, desktop and server |
 | `npm run dist` | Build the AppImage, deb and rpm into `apps/desktop/release/` |
+| `npm run dist:win` | Build the Windows installer and portable `.exe` (run this on Windows) |
 | `npm run server` | Run the collaboration server locally |
 | `npm run server:export` | Build `packages/server/dist/codewarp-server-<version>.tar.gz` |
 
@@ -238,7 +243,8 @@ In the app open **Settings > Collaboration server** and press **Use this compute
 
 - **Production:** push a version tag, for example `git tag v0.2.0 && git push origin v0.2.0`. A tag with a dash (`v0.2.0-beta.1`) becomes a pre-release.
 - **Dev:** every push to `main` replaces the pre-release called `dev` with a fresh build, numbered `<version>-dev.<run>`.
-- Each release contains the AppImage, deb, rpm, the collaboration server archive and `SHA256SUMS.txt`.
+- Each release contains the AppImage, deb, rpm, the Windows installer and portable `.exe`, the collaboration server archive and `SHA256SUMS.txt`.
+- The Linux and Windows builds run as separate jobs (`linux`, `windows`) and a final `publish` job uploads everything, so a release only appears when both succeeded.
 - Pull requests and other branches only run a typecheck and build (`ci.yml`).
 - Keep `version` in `apps/desktop/package.json` in step with your tags, and commit `package-lock.json` so installs in CI match yours.
 
