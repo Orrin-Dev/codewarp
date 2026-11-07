@@ -50,7 +50,14 @@ jobs:
         working-directory: apps/desktop
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: npx electron-builder --linux AppImage deb rpm --publish never --config.extraMetadata.version="$VERSION"
+        run: |
+          # In a workspace npm installs electron in the root node_modules, where electron-builder does not
+          # look, so tell it the exact version that was installed.
+          ELECTRON_VERSION=$(node -p "require('electron/package.json').version")
+          echo "Packaging with Electron $ELECTRON_VERSION"
+          npx electron-builder --linux AppImage deb rpm --publish never \
+            --config.electronVersion="$ELECTRON_VERSION" \
+            --config.extraMetadata.version="$VERSION"
 
       - name: Collect files
         working-directory: apps/desktop/release
