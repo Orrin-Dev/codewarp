@@ -1,61 +1,50 @@
 # Codewarp
 
-A custom Scratch desktop app with two interchangeable coding modes (blocks and text), `.sb3` import/export, and, later, Scratch account linking, GitHub project storage, and real-time collaboration.
+A custom desktop app for making Scratch projects, with two ways to code that you can switch between at any time: a text-based syntax and classic blocks.
 
-## Layout
+> **Status: in development.** Everything below describes the goals of the project, not finished features. More features are coming.
 
-```
-codewarp/
-  packages/core/      shared TypeScript: typed project model (sb3 JSON); later the text syntaxes
-  apps/desktop/       Electron + Vite + TypeScript app
-    electron/         main + preload (plain .cjs, no build step)
-    src/vmHost.ts     scratch-vm + renderer + audio + storage
-    src/blocksEditor.ts   scratch-blocks workspace wired to the VM
-    src/toolbox.ts    the block palette
-    src/main.ts       UI wiring: open/save, sprites, run, Blocks/Text toggle
-```
+## Features
 
-The project JSON (`project.json` inside an `.sb3`) is the single source of truth. The blocks editor and the future C#-style and Python-style text syntaxes are all views of it.
+### Two interchangeable coding modes
+- A custom **text-based syntax** and the classic **block-based** editor.
+- Switch between text and blocks at any time without losing or breaking your code.
+- Export to **.sb3** and use your project on the Scratch website.
 
-## Run
+### Scratch account linking
+- Link your Scratch account to share and edit your projects from inside the app.
+- Your Scratch username is available to other features (for example, real-time collaboration).
 
-```bash
-npm install
-npm run dev        # Vite + Electron
-```
+### Open source, with GitHub project storage
+- The app's code is public on GitHub.
+- Sign in with GitHub to store your projects in a git repository that **you own**.
 
-`npm run dev` also works in a plain browser at http://localhost:5173 (Open/Save fall back to a file picker and a download), which is handy for debugging in Firefox.
+### Real-time collaboration (RTC)
+- Work on a project together with others, live.
+- See other people's mouse cursors, with everything kept in sync.
+- Usernames come from each person's linked Scratch account.
 
-## Package (Linux)
+## Getting started
 
-```bash
-npm run dist       # outputs AppImage, deb and rpm to apps/desktop/release/
-```
+Build and install instructions will be added as the project develops.
 
-Build the rpm on Fedora (`sudo dnf install rpm-build`). The deb and AppImage can come from the same machine or from GitHub Actions later.
+## Contributing
 
-## Known risks (this scaffold has not been run yet)
+Issues and pull requests are welcome. By contributing, you agree that your contributions are released under the same license as the project (see below).
 
-- **Package versions.** The Scratch packages are pinned to `latest` as placeholders. Pin real versions once `npm install` works. `scratch-vm` and `scratch-blocks` publish prerelease builds, and versions must be compatible with each other. Check which ones `scratch-gui` (or TurboWarp's forks) uses.
-- **Vite + scratch-vm.** scratch-gui builds with webpack. If Vite chokes on `scratch-vm` or `scratch-render` (CommonJS, workers), first try the packages' prebuilt browser bundles, then fall back to webpack for the renderer.
-- **Block labels.** If blocks render with missing or key-like labels, the scratch-blocks English messages aren't loaded; scratch-gui loads them through `scratch-l10n`.
-- **Add sprite.** Creates a sprite with no costume; a real costume editor comes later.
-- **Licensing.** `scratch-vm` and `scratch-render` are AGPL-3.0; `scratch-blocks` is Apache-2.0. Check the current license files before choosing your own license. Don't use the Scratch name, logo or cat.
-- Scratch's cloud, login and project-hosting hooks are not included; Codewarp's account linking will replace them.
+## License
 
-## Next
+Codewarp is licensed under the
+[Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0)](https://creativecommons.org/licenses/by-nc-sa/4.0/).
 
-1. Get `npm run dev` running and fix whatever the first run turns up.
-2. Fill out the palette and the stage/sprite targets (stage-specific blocks).
-3. Costume and sound editing.
-4. Text syntaxes (C#-flavored and Python-flavored) with a shared block table.
-5. Account linking, GitHub storage, RTC (Yjs on your VPS).
+In plain terms, you are free to **share** and **adapt** (edit, modify, build on) Codewarp, under these conditions:
 
-## Releases
+- **Attribution**: you must give appropriate credit, link to the license, and indicate if you made changes.
+- **NonCommercial**: you may **not** use Codewarp, or anything derived from it, for commercial purposes.
+- **ShareAlike**: if you modify or build on Codewarp, you must distribute your version under this same license.
 
-GitHub Actions builds the Linux packages (AppImage, deb, rpm) and puts them on the Releases page.
+This summary is not a substitute for the license. See [LICENSE](LICENSE) for details.
 
-- **Production:** push a version tag. `git tag v0.2.0 && git push origin v0.2.0`. A tag with a dash (`v0.2.0-beta.1`) becomes a pre-release.
-- **Dev:** every push to `main` replaces the pre-release called `dev` with a fresh build.
-- Pull requests and other branches only run a typecheck and build (`ci.yml`).
-- Commit `package-lock.json` so installs in CI match yours.
+## Disclaimer
+
+Codewarp is an independent project. It is not affiliated with, endorsed by, or sponsored by the Scratch Foundation, the Scratch Team, or MIT. "Scratch" is a project of the Scratch Foundation, in collaboration with the Lifelong Kindergarten Group at the MIT Media Lab. It is available for free at <https://scratch.mit.edu>.
