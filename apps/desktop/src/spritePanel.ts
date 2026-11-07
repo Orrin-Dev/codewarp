@@ -84,13 +84,13 @@ export class SpritePanel {
     this.stageNote.className = 'cw-stage-note';
 
     this.propsRoot.replaceChildren(
-      row('Sprite', this.nameInput, 'cw-prop-wide'),
-      row('x', this.xInput),
-      row('y', this.yInput),
-      row('Size', this.sizeInput),
-      row('Direction', this.directionInput),
+      row('Sprite', this.nameInput, 'cw-prop-name'),
       row('Show', this.visibleInput, 'cw-prop-check'),
       row('Draggable', this.draggableInput, 'cw-prop-check'),
+      row('x', this.xInput, 'cw-prop-num'),
+      row('y', this.yInput, 'cw-prop-num'),
+      row('Size', this.sizeInput, 'cw-prop-num'),
+      row('Direction', this.directionInput, 'cw-prop-num'),
       this.stageNote,
     );
 

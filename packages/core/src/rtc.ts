@@ -101,6 +101,8 @@ export type ClientMessage =
   | { t: 'snapshot-request' }
   /** Host's answer. `data` is the .sb3 file, base64. `seq` is the last edit already inside it. */
   | { t: 'snapshot'; to: string; seq: number; data: string }
+  /** Host's answer, in pieces: piece `index` of `total` of one .sb3 (each piece base64). `id` names the transfer. */
+  | { t: 'snapshot-chunk'; to: string; id: string; seq: number; index: number; total: number; data: string }
   /** Host only: a fingerprint of the project, so everyone else can check they match. */
   | { t: 'digest'; seq: number; sprites: Record<string, string>; monitors: string }
   /** Ask the host for fresh copies of these sprites. */
@@ -123,6 +125,7 @@ export type ServerMessage =
   | { t: 'pong' }
   | { t: 'snapshot-request'; from: string }
   | { t: 'snapshot'; seq: number; data: string }
+  | { t: 'snapshot-chunk'; id: string; seq: number; index: number; total: number; data: string }
   | { t: 'digest'; seq: number; sprites: Record<string, string>; monitors: string }
   | { t: 'repair-request'; from: string; names: string[] }
   | { t: 'repair'; seq: number; sprites: { name: string; data: string }[]; monitors?: MonitorState[] }
@@ -140,6 +143,10 @@ export const FRAME_JPEG = 0x01;
 
 // ---- limits -----------------------------------------------------------------
 
+/** A project is sent to a newcomer in pieces of this many bytes, so its size is not limited by one message. */
+export const SNAPSHOT_CHUNK_BYTES = 192 * 1024;
+/** At most this many pieces (about 570 MB). */
+export const MAX_SNAPSHOT_CHUNKS = 3000;
 export const MAX_NAME_LENGTH = 32;
 export const MAX_ROOM_LENGTH = 64;
 export const MAX_PEERS_PER_ROOM = 12;

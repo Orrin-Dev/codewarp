@@ -82,6 +82,30 @@ function boot(): void {
   attachStageInput(canvas, host.vm);
   new SpritePanel($('sprite-list'), $('sprite-props'), host, (message) => setStatus(message));
 
+  // ---- Full screen stage -------------------------------------------------
+
+  const frame = $('stage-frame');
+  const updateFullscreen = (): void => {
+    const full = document.fullscreenElement === frame;
+    // The stage is scaled up as a whole (picture, monitors, test-run video) to fit the screen.
+    const scale = full ? Math.min(window.innerWidth / 480, window.innerHeight / 360) : 1;
+    frame.style.setProperty('--stage-scale', String(scale));
+    host.setStageResolution(scale);
+    $('btn-fullscreen').textContent = full ? '⛶ Leave full screen' : '⛶ Full screen';
+  };
+  const toggleFullscreen = (): void => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void frame.requestFullscreen().catch((error) => setStatus(`Could not go full screen: ${error?.message ?? error}`));
+  };
+  $('btn-fullscreen').addEventListener('click', toggleFullscreen);
+  $('fs-exit').addEventListener('click', toggleFullscreen);
+  $('fs-flag').addEventListener('click', () => $('btn-flag').click());
+  $('fs-stop').addEventListener('click', () => $('btn-stop').click());
+  document.addEventListener('fullscreenchange', updateFullscreen);
+  window.addEventListener('resize', () => {
+    if (document.fullscreenElement === frame) updateFullscreen();
+  });
+
   // ---- Collaboration -----------------------------------------------------
 
   let collabUi: CollabUi | null = null;

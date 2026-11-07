@@ -16,11 +16,26 @@ export interface ThemeColors {
 export const DEFAULT_THEME: ThemeColors = { bg: '#14161c', panel: '#1c1f27', text: '#e6e8ee', accent: '#6d7cff' };
 
 export const THEME_PRESETS: Record<string, ThemeColors> = {
+  // dark
   Default: DEFAULT_THEME,
   Midnight: { bg: '#0b0d12', panel: '#12151c', text: '#dfe3ee', accent: '#58a6ff' },
+  Ocean: { bg: '#0a1620', panel: '#10202e', text: '#dbe9f4', accent: '#38bdf8' },
   Forest: { bg: '#101613', panel: '#17201b', text: '#e3ece6', accent: '#3fb27f' },
   Rose: { bg: '#181318', panel: '#211a21', text: '#f0e6ee', accent: '#e0609a' },
+  Sunset: { bg: '#1a1215', panel: '#24181c', text: '#f5e6e0', accent: '#ff7a45' },
+  Grape: { bg: '#15101f', panel: '#1d1629', text: '#ece4f7', accent: '#a855f7' },
+  Dracula: { bg: '#1e1f29', panel: '#282a36', text: '#f8f8f2', accent: '#bd93f9' },
+  Nord: { bg: '#242933', panel: '#2e3440', text: '#eceff4', accent: '#88c0d0' },
+  Mocha: { bg: '#181825', panel: '#1e1e2e', text: '#cdd6f4', accent: '#cba6f7' },
+  'Solarized Dark': { bg: '#00212b', panel: '#002b36', text: '#93a1a1', accent: '#268bd2' },
+  Amber: { bg: '#120d00', panel: '#1a1300', text: '#ffd98a', accent: '#ffb000' },
+  'High contrast': { bg: '#000000', panel: '#0a0a0a', text: '#ffffff', accent: '#ffd400' },
+  // light
   Light: { bg: '#eef0f5', panel: '#ffffff', text: '#1f2430', accent: '#5865f2' },
+  Sky: { bg: '#e8f1fb', panel: '#ffffff', text: '#1c2733', accent: '#2563eb' },
+  Mint: { bg: '#eaf4ef', panel: '#ffffff', text: '#1c2b25', accent: '#10a37f' },
+  Paper: { bg: '#f4efe6', panel: '#fffaf0', text: '#2b2620', accent: '#c2410c' },
+  'Solarized Light': { bg: '#eee8d5', panel: '#fdf6e3', text: '#586e75', accent: '#268bd2' },
 };
 
 /** The server every copy of Codewarp uses until the user picks another one. */
@@ -30,6 +45,8 @@ export const LOCAL_SERVER_URL = COLLAB_DEV_SERVER_URL;
 
 interface Stored {
   theme?: ThemeColors;
+  /** Themes the user saved under their own name. */
+  customThemes?: Record<string, ThemeColors>;
   serverUrl?: string;
 }
 
@@ -121,6 +138,43 @@ export function resetTheme(): void {
 export function applySavedTheme(): void {
   applyTheme(currentTheme());
 }
+
+// ---- the user's own themes --------------------------------------------------
+
+const MAX_THEME_NAME = 24;
+
+export function customThemes(): Record<string, ThemeColors> {
+  const saved = read().customThemes ?? {};
+  const clean: Record<string, ThemeColors> = {};
+  for (const [name, colors] of Object.entries(saved)) {
+    if (colors && [colors.bg, colors.panel, colors.text, colors.accent].every(isHex)) clean[name] = colors;
+  }
+  return clean;
+}
+
+/** Remember the colours under a name. Returns the name used, or null when it is empty or a built-in name. */
+export function saveCustomTheme(name: string, colors: ThemeColors): string | null {
+  const clean = name.replace(/[\u0000-\u001f]/g, '').trim().slice(0, MAX_THEME_NAME);
+  if (!clean || clean in THEME_PRESETS) return null;
+  const stored = read();
+  stored.customThemes = { ...customThemes(), [clean]: { ...colors } };
+  write(stored);
+  return clean;
+}
+
+export function deleteCustomTheme(name: string): void {
+  const stored = read();
+  const all = customThemes();
+  delete all[name];
+  stored.customThemes = all;
+  write(stored);
+}
+
+export const sameTheme = (a: ThemeColors, b: ThemeColors): boolean =>
+  a.bg.toLowerCase() === b.bg.toLowerCase() &&
+  a.panel.toLowerCase() === b.panel.toLowerCase() &&
+  a.text.toLowerCase() === b.text.toLowerCase() &&
+  a.accent.toLowerCase() === b.accent.toLowerCase();
 
 // ---- collaboration server ---------------------------------------------------
 

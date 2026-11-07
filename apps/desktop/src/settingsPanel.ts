@@ -1,4 +1,8 @@
 import {
+  customThemes,
+  deleteCustomTheme,
+  sameTheme,
+  saveCustomTheme,
   DEFAULT_SERVER_URL,
   LOCAL_SERVER_URL,
   THEME_PRESETS,
@@ -41,21 +45,17 @@ export class SettingsPanel {
 
   // ---- appearance ----
 
+  private presetsBox = element('div', 'cw-presets');
+  private themeMessage = element('p', 'cw-settings-message');
+
   private buildAppearance(): HTMLElement {
     const section = element('section', 'cw-settings-section');
     section.append(element('h2', '', 'Appearance'));
-
-    const presets = element('div', 'cw-presets');
-    for (const [name, colors] of Object.entries(THEME_PRESETS)) {
-      const chip = element('button', 'cw-preset');
-      chip.type = 'button';
-      const swatch = element('span', 'cw-swatch');
-      swatch.style.background = `linear-gradient(135deg, ${colors.panel} 50%, ${colors.accent} 50%)`;
-      chip.append(swatch, element('span', '', name));
-      chip.addEventListener('click', () => this.setTheme({ ...colors }));
-      presets.appendChild(chip);
-    }
-    section.appendChild(presets);
+    section.append(
+      element('p', 'cw-settings-hint', 'Pick a theme or change the colours yourself. Your choice is saved and used the next time you open Codewarp.'),
+    );
+    section.appendChild(this.presetsBox);
+    this.renderPresets();
 
     const grid = element('div', 'cw-color-grid');
     for (const { key, label } of COLOR_FIELDS) {
@@ -70,15 +70,67 @@ export class SettingsPanel {
     }
     section.appendChild(grid);
 
+    // Save the current colours as a theme of your own.
+    const saveRow = element('div', 'cw-settings-buttons');
+    const nameInput = element('input');
+    nameInput.type = 'text';
+    nameInput.placeholder = 'Name for your theme';
+    nameInput.maxLength = 24;
+    const saveButton = element('button', '', 'Save as theme');
+    saveButton.type = 'button';
+    saveButton.addEventListener('click', () => {
+      const saved = saveCustomTheme(nameInput.value, this.theme);
+      if (!saved) {
+        this.themeMessage.textContent = 'Enter a name that is not one of the built-in themes.';
+        this.themeMessage.classList.add('cw-bad');
+        return;
+      }
+      nameInput.value = '';
+      this.themeMessage.textContent = `Saved "${saved}".`;
+      this.themeMessage.classList.remove('cw-bad');
+      this.renderPresets();
+    });
     const reset = element('button', '', 'Reset colours');
     reset.type = 'button';
     reset.addEventListener('click', () => {
       resetTheme();
       this.theme = currentTheme();
       this.syncInputs();
+      this.renderPresets();
     });
-    section.append(reset);
+    saveRow.append(nameInput, saveButton, reset);
+    section.append(saveRow, this.themeMessage);
     return section;
+  }
+
+  /** The theme chips: built-in ones, then your own. The one in use is highlighted. */
+  private renderPresets(): void {
+    const chips: HTMLElement[] = [];
+    const chip = (name: string, colors: ThemeColors, removable: boolean): HTMLElement => {
+      const wrap = element('div', 'cw-preset-wrap');
+      const button = element('button', 'cw-preset');
+      button.type = 'button';
+      button.classList.toggle('active', sameTheme(colors, this.theme));
+      const swatch = element('span', 'cw-swatch');
+      swatch.style.background = `linear-gradient(135deg, ${colors.bg} 0 33%, ${colors.panel} 33% 66%, ${colors.accent} 66%)`;
+      button.append(swatch, element('span', '', name));
+      button.addEventListener('click', () => this.setTheme({ ...colors }));
+      wrap.appendChild(button);
+      if (removable) {
+        const remove = element('button', 'cw-preset-remove', '×');
+        remove.type = 'button';
+        remove.title = `Delete "${name}"`;
+        remove.addEventListener('click', () => {
+          deleteCustomTheme(name);
+          this.renderPresets();
+        });
+        wrap.appendChild(remove);
+      }
+      return wrap;
+    };
+    for (const [name, colors] of Object.entries(THEME_PRESETS)) chips.push(chip(name, colors, false));
+    for (const [name, colors] of Object.entries(customThemes())) chips.push(chip(name, colors, true));
+    this.presetsBox.replaceChildren(...chips);
   }
 
   private setTheme(theme: ThemeColors, from?: keyof ThemeColors): void {
@@ -86,6 +138,7 @@ export class SettingsPanel {
     applyTheme(theme);
     saveTheme(theme);
     this.syncInputs(from);
+    this.renderPresets();
   }
 
   private syncInputs(skip?: keyof ThemeColors): void {

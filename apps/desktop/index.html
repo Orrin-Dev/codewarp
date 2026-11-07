@@ -48,11 +48,20 @@
         <div class="stage-controls">
           <button id="btn-flag" type="button" title="Green flag">▶ Run</button>
           <button id="btn-stop" type="button" title="Stop">■ Stop</button>
+          <button id="btn-fullscreen" type="button" class="stage-fs-button" title="Full screen (Esc to leave)">⛶ Full screen</button>
         </div>
-        <div class="stage-wrap">
-          <canvas id="stage" class="stage" width="480" height="360"></canvas>
-          <div id="monitors" class="monitors"></div>
+        <div id="stage-frame" class="stage-frame">
+          <div class="stage-wrap">
+            <canvas id="stage" class="stage" width="480" height="360"></canvas>
+            <div id="monitors" class="monitors"></div>
+          </div>
+          <div class="stage-fs-bar">
+            <button id="fs-flag" type="button" title="Green flag">▶</button>
+            <button id="fs-stop" type="button" title="Stop">■</button>
+            <button id="fs-exit" type="button" title="Leave full screen">✕</button>
+          </div>
         </div>
+        <div id="sprite-props" class="sprite-props"></div>
         <div class="sprites-head">
           <span>Sprites</span>
           <div class="add-buttons">
@@ -61,7 +70,6 @@
           </div>
         </div>
         <div id="sprite-list" class="sprite-list"></div>
-        <div id="sprite-props" class="sprite-props"></div>
       </aside>
     </main>
 

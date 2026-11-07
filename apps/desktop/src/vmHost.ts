@@ -36,6 +36,15 @@ export class VmHost {
   readonly vm: any;
   private readonly renderer: any;
 
+  /** Draw the stage at `scale` times its normal size (full screen), or 1 for normal. Keeps it sharp when enlarged. */
+  setStageResolution(scale: number): void {
+    try {
+      this.renderer.resize(Math.round(480 * scale), Math.round(360 * scale));
+    } catch (error) {
+      console.warn('Could not resize the stage', error);
+    }
+  }
+
   constructor(stageCanvas: HTMLCanvasElement) {
     const { VirtualMachine, ScratchRender, ScratchStorage, AudioEngine, svg } = resolveScratchClasses();
     const { BitmapAdapter, SVGRenderer } = svg;

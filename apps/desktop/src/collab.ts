@@ -1,3 +1,4 @@
+import { MAX_SNAPSHOT_CHUNKS, SNAPSHOT_CHUNK_BYTES } from '@codewarp/core';
 import type { ClientMessage, MonitorState, Op, Peer, ServerMessage } from '@codewarp/core';
 import type { VmHost } from './vmHost';
 import type { BlocksEditor, LocalEdit } from './blocksEditor';
@@ -29,7 +30,11 @@ interface RemoteCursor {
 
 const CURSOR_TIMEOUT_MS = 8000;
 const CURSOR_GLIDE = 0.45;
-const SNAPSHOT_TIMEOUT_MS = 20000;
+/** How long to wait for the host to start sending (it has to pack the project first)... */
+const SNAPSHOT_TIMEOUT_MS = 60000;
+/** ...and how long a started transfer may stall before giving up. */
+const SNAPSHOT_IDLE_MS = 30000;
+const SEND_BUFFER_LIMIT = 4 * 1024 * 1024;
 const HEARTBEAT_MS = 12000;
 const DEAD_AFTER_MS = 35000;
 const DIGEST_EVERY_MS = 8000;
@@ -74,6 +79,7 @@ export class Collab {
   private flushTimer: number | undefined;
   private buffered: { seq: number; ops: Op[] }[] = [];
   private snapshotTimer: number | undefined;
+  private incoming: { id: string; total: number; parts: Uint8Array[]; got: number; shown: number } | null = null;
   private heartbeatTimer: number | undefined;
   private digestTimer: number | undefined;
   private stopEdits: (() => void) | null = null;
@@ -365,7 +371,10 @@ export class Collab {
         void this.answerSnapshot(msg.from);
         break;
       case 'snapshot':
-        void this.receiveSnapshot(msg.seq, msg.data);
+        void this.receiveSnapshot(msg.seq, fromBase64(msg.data));
+        break;
+      case 'snapshot-chunk':
+        this.receiveChunk(msg);
         break;
       case 'digest':
         this.checkDigest(msg);
@@ -404,13 +413,22 @@ export class Collab {
   // ---- joining: get the host's project ----------------------------------------------
 
   private requestSnapshot(): void {
+    this.incoming = null;
     this.send({ t: 'snapshot-request' });
+    this.armSnapshotTimer(SNAPSHOT_TIMEOUT_MS);
+  }
+
+  private armSnapshotTimer(ms: number): void {
     window.clearTimeout(this.snapshotTimer);
     this.snapshotTimer = window.setTimeout(() => {
       if (this.state !== 'syncing') return;
-      this.events.onMessage('The host did not send the project in time. Join again to retry.');
+      this.events.onMessage(
+        this.incoming
+          ? 'The project download stalled. Join again to retry.'
+          : 'The host did not send the project in time. Join again to retry.',
+      );
       this.disconnect();
-    }, SNAPSHOT_TIMEOUT_MS);
+    }, ms);
   }
 
   /** Replace your project with the host's current copy. */
@@ -427,18 +445,68 @@ export class Collab {
       // Let anything that is still being applied finish, so the copy is complete.
       await this.stateSync.settle();
       const bytes = await this.vmHost.saveSb3();
-      this.send({ t: 'snapshot', to, seq: this.lastSeq, data: toBase64(bytes) });
+      const seq = this.lastSeq;
+      const total = Math.max(1, Math.ceil(bytes.length / SNAPSHOT_CHUNK_BYTES));
+      if (total > MAX_SNAPSHOT_CHUNKS) {
+        this.events.onMessage('The project is too big to send (over about 570 MB)');
+        return;
+      }
+      const id = Math.random().toString(36).slice(2, 10);
+      if (total > 20) this.events.onMessage(`Sending the project to a new person (${(bytes.length / 1048576).toFixed(1)} MB)…`);
+      for (let index = 0; index < total; index++) {
+        // Do not queue more than a few MB at once; wait for the connection to catch up.
+        while (this.ws && this.ws.readyState === WebSocket.OPEN && this.ws.bufferedAmount > SEND_BUFFER_LIMIT) {
+          await new Promise((resolve) => window.setTimeout(resolve, 25));
+        }
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        const part = bytes.subarray(index * SNAPSHOT_CHUNK_BYTES, (index + 1) * SNAPSHOT_CHUNK_BYTES);
+        this.send({ t: 'snapshot-chunk', to, id, seq, index, total, data: toBase64(part) });
+        if (index % 8 === 7) await new Promise((resolve) => window.setTimeout(resolve, 0)); // let the UI breathe
+      }
     } catch (error) {
       console.error(error);
       this.events.onMessage('Could not send the project to the new person');
     }
   }
 
-  private async receiveSnapshot(seq: number, data: string): Promise<void> {
+  /** One piece of the host's project arrived. */
+  private receiveChunk(msg: Extract<ServerMessage, { t: 'snapshot-chunk' }>): void {
+    if (this.state !== 'syncing') return;
+    if (msg.total < 1 || msg.total > MAX_SNAPSHOT_CHUNKS || msg.index < 0 || msg.index >= msg.total) return;
+    if (!this.incoming || this.incoming.id !== msg.id) {
+      this.incoming = { id: msg.id, total: msg.total, parts: new Array(msg.total), got: 0, shown: 0 };
+    }
+    const transfer = this.incoming;
+    if (msg.total !== transfer.total) return;
+    if (!transfer.parts[msg.index]) {
+      transfer.parts[msg.index] = fromBase64(msg.data);
+      transfer.got++;
+    }
+    this.armSnapshotTimer(SNAPSHOT_IDLE_MS);
+
+    if (transfer.total > 8) {
+      const percent = Math.floor((transfer.got / transfer.total) * 10) * 10;
+      if (percent > transfer.shown && transfer.got < transfer.total) {
+        transfer.shown = percent;
+        this.events.onMessage(`Downloading the project… ${percent}%`);
+      }
+    }
+    if (transfer.got < transfer.total) return;
+
+    this.incoming = null;
+    const bytes = new Uint8Array(transfer.parts.reduce((sum, part) => sum + part.length, 0));
+    let offset = 0;
+    for (const part of transfer.parts) {
+      bytes.set(part, offset);
+      offset += part.length;
+    }
+    void this.receiveSnapshot(msg.seq, bytes);
+  }
+
+  private async receiveSnapshot(seq: number, bytes: Uint8Array): Promise<void> {
     if (this.state !== 'syncing') return;
     window.clearTimeout(this.snapshotTimer);
     try {
-      const bytes = fromBase64(data);
       await this.vmHost.load(bytes.buffer as ArrayBuffer);
     } catch (error) {
       console.error(error);

@@ -88,9 +88,39 @@ button.active { background: var(--accent); border-color: var(--accent); color: #
   gap: 8px;
   padding: 10px;
   background: var(--panel);
+  /* Only the sprite list scrolls (see .cw-sprite-grid), so the stage never moves. This is the fallback
+     for a window that is too short for everything. */
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
+.side > * { flex: none; }
+.side > .sprite-list { flex: 1 1 auto; min-height: 112px; }
 .stage-controls { display: flex; gap: 6px; }
+.stage-fs-button { margin-left: auto; }
+
+.stage-frame { position: relative; width: 480px; height: 360px; }
+.stage-fs-bar { display: none; }
+.stage-frame:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.stage-frame:fullscreen .stage-wrap { transform: scale(var(--stage-scale, 1)); transform-origin: center; }
+.stage-frame:fullscreen .stage { border: 0; border-radius: 0; }
+.stage-frame:fullscreen .stage-fs-bar {
+  display: flex;
+  gap: 6px;
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  opacity: 0.25;
+  transition: opacity 0.2s;
+}
+.stage-frame:fullscreen .stage-fs-bar:hover { opacity: 1; }
 .stage {
   width: 480px;
   height: 360px;
@@ -191,19 +221,22 @@ button.active { background: var(--accent); border-color: var(--accent); color: #
 .add-buttons { display: flex; gap: 6px; }
 .sprite-props {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 14px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px 10px;
   padding: 10px;
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 10px;
 }
 .sprite-props.cw-disabled { opacity: 0.5; pointer-events: none; }
-.cw-prop { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); }
-.cw-prop-wide { grid-column: 1 / -1; }
-.cw-prop-wide input { flex: 1; width: auto; }
+.cw-prop { display: flex; color: var(--muted); min-width: 0; }
+.cw-prop-name { grid-column: span 2; align-items: center; gap: 8px; }
+.cw-prop-name input { flex: 1; min-width: 0; }
+.cw-prop-num { flex-direction: column; gap: 3px; font-size: 12px; }
+.cw-prop-num input { width: 100%; }
+.cw-prop-check { align-items: center; gap: 6px; }
+.cw-prop-check input { accent-color: var(--accent); }
 .cw-prop input[type='text'], .cw-prop input[type='number'] {
-  width: 84px;
   padding: 5px 8px;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -213,17 +246,32 @@ button.active { background: var(--accent); border-color: var(--accent); color: #
 }
 .cw-prop input:focus { outline: none; border-color: var(--accent); }
 .cw-prop input:disabled { opacity: 0.4; }
-.cw-prop-check { justify-content: flex-start; gap: 10px; }
-.cw-prop-check span { min-width: 64px; }
-.cw-prop-check input { accent-color: var(--accent); }
 .cw-stage-note { display: none; grid-column: 1 / -1; color: var(--muted); line-height: 1.4; }
 .sprite-props.cw-stage-selected .cw-prop { display: none; }
 .sprite-props.cw-stage-selected .cw-stage-note { display: block; }
 
 /* the sprite cards */
-.sprite-list { display: flex; gap: 10px; align-items: stretch; }
-.cw-stage-slot { flex: none; padding-right: 10px; border-right: 1px solid var(--border); }
-.cw-sprite-grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fill, 92px); gap: 8px; align-content: start; min-width: 0; }
+.sprite-list { display: flex; gap: 10px; align-items: stretch; min-height: 0; }
+.cw-stage-slot { flex: none; padding-right: 10px; border-right: 1px solid var(--border); align-self: flex-start; }
+.cw-sprite-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 92px);
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+  min-height: 0;
+  /* The sprite list scrolls by itself. overscroll-behavior stops the scroll from carrying over to the panel. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.cw-sprite-grid::-webkit-scrollbar { width: 8px; }
+.cw-sprite-grid::-webkit-scrollbar-track { background: transparent; }
+.cw-sprite-grid::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.cw-sprite-grid::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 .cw-tile {
   position: relative;
   display: flex;
@@ -304,12 +352,13 @@ button.active { background: var(--accent); border-color: var(--accent); color: #
 .cw-paint-group input[type='color'] { width: 32px; height: 26px; padding: 0; border: 1px solid var(--border); background: none; }
 .cw-paint-size { width: 22px; text-align: right; color: var(--muted); font-size: 12px; }
 .cw-paint-check { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 4px; }
-.cw-paint-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.cw-paint-wrap { position: relative; background:
-  conic-gradient(#ccc 25%, #fff 0 50%, #ccc 0 75%, #fff 0) 0 0 / 16px 16px; box-shadow: 0 0 0 1px var(--border); }
+.cw-paint-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--bg); }
+.cw-paint-wrap { position: absolute; left: 0; top: 0; background:
+  conic-gradient(#ccc 25%, #fff 0 50%, #ccc 0 75%, #fff 0) 0 0 / 16px 16px; box-shadow: 0 0 0 1px var(--border), 0 4px 24px rgba(0, 0, 0, 0.35); will-change: transform; }
 .cw-paint-wrap[hidden] { display: none; }
-.cw-paint-canvas, .cw-paint-overlay { position: absolute; left: 0; top: 0; image-rendering: pixelated; touch-action: none; }
-.cw-paint-empty { color: var(--muted); padding: 24px; text-align: center; }
+.cw-paint-canvas, .cw-paint-overlay { position: absolute; left: 0; top: 0; touch-action: none; }
+.cw-paint-zoom { min-width: 44px; text-align: center; color: var(--muted); font-size: 12px; }
+.cw-paint-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); padding: 24px; text-align: center; }
 .cw-paint-empty[hidden] { display: none; }
 .cw-paint-disabled .cw-paint-bar { opacity: 0.5; pointer-events: none; }
 
@@ -416,6 +465,10 @@ button.cw-recording { background: #c93a3a; border-color: #c93a3a; color: #fff; }
 .cw-settings-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 .cw-presets { display: flex; flex-wrap: wrap; gap: 8px; }
 .cw-preset { display: flex; align-items: center; gap: 8px; }
+.cw-preset.active { border-color: var(--accent); background: rgba(109, 124, 255, 0.14); }
+.cw-preset-wrap { display: flex; align-items: stretch; }
+.cw-preset-wrap .cw-preset-remove { margin-left: -1px; padding: 0 8px; border-radius: 0 6px 6px 0; color: #ff8a8a; }
+.cw-preset-wrap:has(.cw-preset-remove) .cw-preset { border-radius: 6px 0 0 6px; }
 .cw-swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border); }
 .cw-color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .cw-color-row { display: flex; align-items: center; gap: 10px; color: var(--muted); cursor: pointer; }

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 // Node runs this file directly (types are stripped). In the monorepo the shared protocol is imported from core; the export script rewrites the path.
 import type { ClientMessage, Peer, ServerMessage } from '../../core/src/rtc.ts';
-import { MAX_PEERS_PER_ROOM, FRAME_JPEG, cleanName, cleanRoom, colorFor, DEFAULT_PORT } from '../../core/src/rtc.ts';
+import { MAX_PEERS_PER_ROOM, MAX_SNAPSHOT_CHUNKS, FRAME_JPEG, cleanName, cleanRoom, colorFor, DEFAULT_PORT } from '../../core/src/rtc.ts';
 
 /*
  * Codewarp collaboration relay.
@@ -230,6 +230,17 @@ wss.on('connection', (ws) => {
       case 'snapshot-request': {
         const host = room.members.get(room.hostId);
         if (host && host.id !== me.id) send(host.ws, { t: 'snapshot-request', from: me.id });
+        break;
+      }
+      case 'snapshot-chunk': {
+        if (me.id !== room.hostId) return; // only the host answers
+        const to = room.members.get(String(msg.to));
+        const index = Number(msg.index);
+        const total = Number(msg.total);
+        const data = String(msg.data ?? '');
+        if (!to || !Number.isInteger(index) || !Number.isInteger(total)) return;
+        if (total < 1 || total > MAX_SNAPSHOT_CHUNKS || index < 0 || index >= total || data.length > 400_000) return;
+        send(to.ws, { t: 'snapshot-chunk', id: String(msg.id ?? '').slice(0, 24), seq: Number(msg.seq) || 0, index, total, data });
         break;
       }
       case 'snapshot': {
