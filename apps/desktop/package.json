@@ -52,6 +52,7 @@
         "rpm"
       ],
       "maintainer": "Codewarp contributors"
-    }
+    },
+    "npmRebuild": false
   }
 }

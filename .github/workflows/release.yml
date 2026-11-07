@@ -46,6 +46,20 @@ jobs:
       - name: Build the app
         run: npm run build -w @codewarp/desktop
 
+      - name: Check the packaging binary
+        run: |
+          # electron-builder runs this helper for everything; ENOENT means it is missing or not executable
+          B=node_modules/app-builder-bin/linux/x64/app-builder
+          ls -la node_modules/app-builder-bin/linux/x64/ || true
+          if [ ! -x "$B" ]; then
+            echo "app-builder missing or not executable, reinstalling app-builder-bin"
+            V=$(node -p "require('app-builder-bin/package.json').version" 2>/dev/null || echo "")
+            rm -rf node_modules/app-builder-bin
+            HUSKY=0 npm install --no-save --no-package-lock --ignore-scripts "app-builder-bin@${V:-5.0.0-alpha.10}"
+            chmod +x "$B" || true
+            ls -la node_modules/app-builder-bin/linux/x64/
+          fi
+
       - name: Package (AppImage, deb, rpm)
         working-directory: apps/desktop
         env:
