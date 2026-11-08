@@ -226,14 +226,16 @@ export class SettingsPanel {
     void bridge.getVersion().then((v) => {
       select.value = getUpdateChannel() ?? (/-dev\./.test(v) ? 'dev' : 'production');
     });
-    const channelStatus = element('p', 'cw-settings-message');
+    const status = element('p', 'cw-settings-message');
     select.addEventListener('change', () => {
       saveUpdateChannel(select.value as UpdateChannel);
-      channelStatus.textContent = 'Checking the new branch…';
-      void bridge.checkForUpdates().then((message) => (channelStatus.textContent = message));
+      status.textContent = 'Checking the new branch…';
+      void bridge.checkForUpdates().then((message) => {
+        if (message) status.textContent = message;
+      });
     });
     channelRow.append(element('span', '', 'Update from:'), select);
-    section.append(channelRow, channelStatus);
+    section.append(channelRow);
 
     const label = element('label', 'cw-check-row');
     const check = element('input');
@@ -246,12 +248,15 @@ export class SettingsPanel {
     const row = element('div', 'cw-settings-buttons');
     const button = element('button', '', 'Check for updates now');
     button.type = 'button';
-    const status = element('p', 'cw-settings-message');
     button.addEventListener('click', () => {
       status.textContent = 'Checking…';
-      void bridge.checkForUpdates().then((message) => (status.textContent = message));
+      void bridge.checkForUpdates().then((message) => {
+        if (message) status.textContent = message;
+      });
     });
-    bridge.onUpdateStatus((message) => (status.textContent = message));
+    bridge.onUpdateStatus((message) => {
+      status.textContent = message;
+    });
     row.appendChild(button);
     section.append(row, status);
     return section;

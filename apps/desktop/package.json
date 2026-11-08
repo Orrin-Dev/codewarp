@@ -59,7 +59,11 @@
         "rpm"
       ],
       "maintainer": "Codewarp contributors",
-      "executableName": "codewarp"
+      "executableName": "codewarp",
+      "icon": "build/icons",
+      "desktop": {
+        "StartupWMClass": "Codewarp"
+      }
     },
     "npmRebuild": false,
     "artifactName": "Codewarp-${version}-${arch}.${ext}",

@@ -2,6 +2,8 @@ const { app, BrowserWindow, dialog, ipcMain, session } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
+app.setName('Codewarp'); // the launcher matches the window to its icon by this name
+
 let autoUpdater = null;
 try {
   ({ autoUpdater } = require('electron-updater'));
@@ -87,7 +89,14 @@ function setupAutoUpdate() {
   autoUpdater.on('update-not-available', () => tell('Codewarp is up to date.'));
   autoUpdater.on('error', (error) => {
     updateBusy = false;
-    tell(`Could not check for updates: ${error == null ? 'unknown error' : error.message}`);
+    const text = error == null ? 'unknown error' : String(error.message);
+    // The raw error is a wall of HTTP headers. Say what it means, keep the first line, and log the rest.
+    console.warn('[update] error:', text);
+    if (/404|Cannot find channel/.test(text)) {
+      tell('No release has been published on that branch yet, so there is nothing to update to.');
+    } else {
+      tell(`Could not check for updates: ${text.split('\n')[0].slice(0, 200)}`);
+    }
   });
   autoUpdater.on('update-downloaded', async (info) => {
     updateBusy = false;
@@ -125,9 +134,9 @@ ipcMain.handle('update:check', async () => {
   updateBusy = true;
   try {
     await autoUpdater.checkForUpdates();
-    return 'Checking…';
+    return ''; // the result arrives as update:status messages
   } catch (error) {
-    return `Could not check for updates: ${error.message}`;
+    return ''; // the 'error' event has already told the window
   } finally {
     updateBusy = false;
   }

@@ -559,3 +559,4 @@ body.cw-scratch-sprites .sprite-props input[type='text'], body.cw-scratch-sprite
 .cw-lobby-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; }
 .cw-lobby-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cw-lobby-count { color: var(--muted); font-size: 12px; }
+.cw-settings-message { overflow-wrap: anywhere; }
