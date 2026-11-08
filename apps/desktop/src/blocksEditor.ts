@@ -63,7 +63,7 @@ export class BlocksEditor {
 
   // Other people's selections and drags, drawn on blocks.
   private readonly remoteSelected = new Map<string, string>();
-  private readonly remoteDragging = new Map<string, { block: string; timer?: number }>();
+  private readonly remoteDragging = new Map<string, { block: string; ghost: SVGElement; base: { x: number; y: number }; timer?: number }>();
   private pointerStart: { x: number; y: number } | null = null;
   private draggingBlock = '';
   private lastDragSent = 0;
@@ -228,7 +228,10 @@ export class BlocksEditor {
     root?.classList.remove('cw-remote-selected');
   }
 
-  /** Move a block on screen the way somebody else is dragging it. The real move arrives when they let go. */
+  /**
+   * Show somebody else dragging a block. The real block is never touched (so it can't be left in a
+   * broken state); a see-through copy of it follows their mouse instead. The real move arrives when they let go.
+   */
   showRemoteDrag(peer: string, color: string, target: string, id: string, dx: number, dy: number): void {
     const state = this.remoteDragging.get(peer);
     if (!id) {
@@ -238,15 +241,24 @@ export class BlocksEditor {
     if (state && state.block !== id) this.finishRemoteDrag(peer, true);
     const block = this.remoteBlock(target, id);
     const root: SVGElement | undefined = block?.getSvgRoot?.();
-    // Only loose blocks can follow the mouse. A block still inside a stack waits until it has been pulled out.
-    if (!block || !root || block.getParent()) return;
-    const current = this.remoteDragging.get(peer);
-    if (current?.timer) window.clearTimeout(current.timer);
-    this.remoteDragging.set(peer, { block: id });
-    const base = block.getRelativeToSurfaceXY();
-    root.classList.add('cw-remote-drag');
-    root.style.setProperty('--peer-color', color);
-    root.setAttribute('transform', `translate(${base.x + dx},${base.y + dy})`);
+    if (!block || !root) return;
+    let current = this.remoteDragging.get(peer);
+    if (current?.timer) {
+      window.clearTimeout(current.timer);
+      current.timer = undefined;
+    }
+    if (!current) {
+      const ghost = root.cloneNode(true) as SVGElement;
+      ghost.removeAttribute('data-id');
+      ghost.querySelectorAll('[data-id]').forEach((node) => node.removeAttribute('data-id'));
+      ghost.classList.remove('blocklySelected', 'cw-remote-selected', 'blocklyDragging');
+      ghost.classList.add('cw-remote-drag');
+      ghost.style.setProperty('--peer-color', color);
+      this.workspace.getCanvas().appendChild(ghost);
+      current = { block: id, ghost, base: block.getRelativeToSurfaceXY() };
+      this.remoteDragging.set(peer, current);
+    }
+    current.ghost.setAttribute('transform', `translate(${current.base.x + dx},${current.base.y + dy})`);
   }
 
   private finishRemoteDrag(peer: string, now = false): void {
@@ -254,15 +266,7 @@ export class BlocksEditor {
     if (!state) return;
     const settle = () => {
       this.remoteDragging.delete(peer);
-      const block = this.workspace.getBlockById(state.block);
-      const root: SVGElement | undefined = block?.getSvgRoot?.();
-      if (!block || !root) return;
-      root.classList.remove('cw-remote-drag');
-      // If the move already arrived Blockly has placed the block; otherwise put it back where it really is.
-      if (!block.getParent()) {
-        const xy = block.getRelativeToSurfaceXY();
-        root.setAttribute('transform', `translate(${xy.x},${xy.y})`);
-      }
+      state.ghost.remove();
     };
     if (now) settle();
     else state.timer = window.setTimeout(settle, DROP_SETTLE_MS);

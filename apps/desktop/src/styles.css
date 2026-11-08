@@ -500,7 +500,8 @@ button.cw-recording { background: #c93a3a; border-color: #c93a3a; color: #fff; }
 
 /* ---- what other people are doing to blocks ---- */
 .cw-remote-selected > .blocklyPath { stroke: var(--peer-color) !important; stroke-width: 3px !important; }
-.cw-remote-drag { opacity: 0.9; filter: drop-shadow(0 0 6px var(--peer-color)); }
+.cw-remote-drag { opacity: 0.75; filter: drop-shadow(0 0 6px var(--peer-color)); }
+.cw-remote-drag, .cw-remote-drag * { pointer-events: none !important; }
 .cw-remote-drag > .blocklyPath { stroke: var(--peer-color) !important; stroke-width: 3px !important; }
 
 /* ---- Settings: checkbox row, diagnostics, scratch-style sprite area ---- */

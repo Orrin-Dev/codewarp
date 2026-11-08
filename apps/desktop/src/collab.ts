@@ -21,8 +21,12 @@ interface RemoteCursor {
   el: HTMLElement;
   /** Which sprite's workspace the mouse is over (the last one, if it is somewhere else in the app now). */
   target: string;
-  /** 'workspace': over the blocks, x and y are workspace units. 'window': anywhere else, x and y are fractions of the window. */
+  /** 'workspace': over the blocks, x and y are workspace units. 'window': anywhere else, x and y are fractions of `region`. */
   kind: 'workspace' | 'window';
+  /** Which part of the app the mouse is over: stage, side, costumes, sounds or win. */
+  region: string;
+  /** The sprite the costume or sound editor was showing. */
+  scope: string;
   /** Where the other person's mouse is, in workspace coordinates. */
   x: number;
   y: number;
@@ -770,25 +774,67 @@ export class Collab {
 
   // ---- cursors -----------------------------------------------------------------------------
 
+  /** The element each region's fractions are measured against. */
+  private regionElement(region: string): HTMLElement | null {
+    switch (region) {
+      case 'stage':
+        return document.querySelector<HTMLElement>('.stage-wrap');
+      case 'side':
+        return document.querySelector<HTMLElement>('aside.side');
+      case 'costumes':
+        return document.getElementById('pane-costumes');
+      case 'sounds':
+        return document.getElementById('pane-sounds');
+      default:
+        return null; // 'win': the whole window
+    }
+  }
+
   private sendCursor(e: PointerEvent): void {
     this.cursorHidden = false;
     if (!document.hasFocus()) return;
     const now = performance.now();
     if (now - this.lastCursorSent < 40) return;
     this.lastCursorSent = now;
+    const node = e.target instanceof Node ? e.target : null;
+    const target = this.vm.editingTarget;
+    const sprite = target?.getName() ?? '';
+
     // Over the blocks: send the spot in the workspace, so it stays on the same block however the others scroll.
     const editor = this.editor.element;
-    const overBlocks = editor.offsetParent !== null && e.target instanceof Node && editor.contains(e.target);
-    const target = this.vm.editingTarget;
-    if (overBlocks && target) {
+    if (target && node && editor.offsetParent !== null && editor.contains(node)) {
       const point = this.editor.clientToWorkspace(e.clientX, e.clientY);
       if (point) {
-        this.send({ t: 'cursor', target: target.getName(), x: point.x, y: point.y });
+        this.send({ t: 'cursor', target: sprite, x: point.x, y: point.y });
         return;
       }
     }
-    // Anywhere else: send where it is as a fraction of the window.
-    this.send({ t: 'cursor', target: '@window', x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight });
+
+    // Everywhere else: a fraction of the part of the app it is over, so it lands on the same spot on any screen size.
+    const inside = (el: HTMLElement | null): boolean => !!el && !!node && el.offsetParent !== null && el.contains(node);
+    let region = 'win';
+    let scope = '';
+    if (inside(document.getElementById('pane-settings'))) {
+      this.hideMyCursor(); // nobody needs to see you in your own settings
+      return;
+    } else if (inside(this.regionElement('stage'))) region = 'stage';
+    else if (inside(this.regionElement('costumes'))) {
+      region = 'costumes';
+      scope = sprite;
+    } else if (inside(this.regionElement('sounds'))) {
+      region = 'sounds';
+      scope = sprite;
+    } else if (inside(this.regionElement('side'))) region = 'side';
+
+    const el = this.regionElement(region);
+    const rect = el?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+    if (rect.width <= 0 || rect.height <= 0) return;
+    this.send({
+      t: 'cursor',
+      target: scope ? `@${region}:${scope}` : `@${region}`,
+      x: (e.clientX - rect.left) / rect.width,
+      y: (e.clientY - rect.top) / rect.height,
+    });
   }
 
   private hideMyCursor(): void {
@@ -812,20 +858,33 @@ export class Collab {
       label.textContent = peer.name;
       el.append(arrow, label);
       this.windowLayer.appendChild(el);
-      cursor = { el, target: '', kind: 'window', x, y, dx: x, dy: y, seen: 0 };
+      cursor = { el, target: '', kind: 'window', region: 'win', scope: '', x, y, dx: x, dy: y, seen: 0 };
       this.cursors.set(from, cursor);
     }
     if (target === '@hide') {
       cursor.seen = 0; // hidden until it moves again
       return;
     }
-    const kind = target === '@window' ? 'window' : 'workspace';
+    const kind = target.startsWith('@') ? 'window' : 'workspace';
     if (kind === 'workspace') {
       if (cursor.target !== target) {
         cursor.dx = x; // jumped to another sprite: don't glide across the screen
         cursor.dy = y;
       }
       cursor.target = target;
+      cursor.region = 'blocks';
+      cursor.scope = '';
+    } else {
+      const [name, ...rest] = target.slice(1).split(':');
+      const region = name === 'window' ? 'win' : name;
+      const scope = rest.join(':');
+      if (cursor.region !== region || cursor.scope !== scope) {
+        cursor.dx = x; // moved to another part of the app: jump, don't glide
+        cursor.dy = y;
+      }
+      cursor.region = region;
+      cursor.scope = scope;
+      if (scope) cursor.target = scope;
     }
     if (cursor.kind !== kind) {
       cursor.kind = kind;
@@ -834,6 +893,22 @@ export class Collab {
       (kind === 'window' ? this.windowLayer : this.cursorLayer).appendChild(cursor.el);
     }
     Object.assign(cursor, { x, y, seen: performance.now() });
+  }
+
+  /**
+   * Where a cursor that is not over the blocks is drawn on this screen, or null when this person is not
+   * looking at the same thing (a different tab, or another sprite's costumes).
+   */
+  private windowPosition(cursor: RemoteCursor, editing: string | undefined): { x: number; y: number } | null {
+    const el = this.regionElement(cursor.region);
+    if (cursor.region === 'costumes' || cursor.region === 'sounds') {
+      if (!el || el.hidden || el.offsetParent === null || cursor.scope !== editing) return null;
+    }
+    if (cursor.region === 'stage' || cursor.region === 'side') {
+      if (!el || el.offsetParent === null) return null;
+    }
+    const rect = el?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+    return { x: rect.left + cursor.dx * rect.width, y: rect.top + cursor.dy * rect.height };
   }
 
   private startCursorLoop(): void {
@@ -846,8 +921,9 @@ export class Collab {
         cursor.dy += (cursor.y - cursor.dy) * CURSOR_GLIDE;
         const fresh = now - cursor.seen < CURSOR_TIMEOUT_MS;
         if (cursor.kind === 'window') {
-          cursor.el.hidden = !fresh;
-          if (fresh) cursor.el.style.transform = `translate(${cursor.dx * window.innerWidth}px, ${cursor.dy * window.innerHeight}px)`;
+          const place = fresh ? this.windowPosition(cursor, editing) : null;
+          cursor.el.hidden = !place;
+          if (place) cursor.el.style.transform = `translate(${place.x}px, ${place.y}px)`;
           continue;
         }
         const visible = fresh && cursor.target === editing && this.editor.element.offsetParent !== null;

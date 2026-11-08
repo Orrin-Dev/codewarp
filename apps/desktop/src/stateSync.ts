@@ -336,7 +336,10 @@ export class StateSync {
       }
 
       // Changed sprites.
-      const known = this.knownAssetIds();
+      // Always send the files for added or changed costumes and sounds. Skipping ones we think
+      // everyone already has caused "missing file" errors when someone didn't (a deleted then
+      // re-added costume, a failed earlier change, a late joiner), and the whole change was lost.
+      const known = new Set<string>();
       const needed = new Map<string, AssetBlob>();
       for (const [name, state] of next) {
         const before = this.baseline.get(name);
@@ -376,7 +379,8 @@ export class StateSync {
     }
   }
 
-  /** Files for everything in the project except what other people can already have. */
+  /** (Unused now: kept for reference.) Files other people can already have. */
+  // @ts-ignore unused
   private knownAssetIds(): Set<string> {
     const ids = new Set<string>();
     for (const state of this.baseline.values()) {
