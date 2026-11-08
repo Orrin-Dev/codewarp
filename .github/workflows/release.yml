@@ -90,6 +90,18 @@ jobs:
             --config.extraMetadata.version="$VERSION" \
             --config.publish.url="$UPDATE_URL"
 
+      - name: Check the app icon made it into the packages
+        run: |
+          # Without an icon electron-builder silently falls back to the default Electron atom.
+          ls -la apps/desktop/build apps/desktop/build/icons
+          for pkg in apps/desktop/release/*.rpm; do
+            echo "Icons in $pkg:"; rpm -qlp "$pkg" | grep -E 'icons/hicolor' | head -20
+            rpm -qlp "$pkg" | grep -qE 'icons/hicolor/512x512/apps/codewarp.png' || echo "::warning::No Codewarp icon found in the rpm"
+          done
+          for pkg in apps/desktop/release/*.deb; do
+            dpkg-deb -c "$pkg" | grep -qE 'icons/hicolor/512x512/apps/codewarp.png' || echo "::warning::No Codewarp icon found in the deb"
+          done
+
       - name: Package the collaboration server
         env:
           CODEWARP_VERSION: ${{ needs.meta.outputs.version }}
