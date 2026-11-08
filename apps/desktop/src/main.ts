@@ -10,7 +10,7 @@ import { pickFile } from './files';
 import { Collab } from './collab';
 import { CollabUi } from './collabUi';
 import { SettingsPanel } from './settingsPanel';
-import { applySavedTheme, applyScratchSprites, getAutoUpdate, getFramerate, getScratchSprites } from './settings';
+import { applySavedTheme, applyScratchSprites, getAutoUpdate, getUpdateChannel, getFramerate, getScratchSprites } from './settings';
 import { Backpack } from './backpack';
 import { diagnostics, installDiagnostics } from './diagnostics';
 
@@ -76,6 +76,8 @@ function boot(): void {
   applySavedTheme();
   applyScratchSprites(getScratchSprites());
   window.codewarp?.setAutoUpdate(getAutoUpdate());
+  const chosenChannel = getUpdateChannel();
+  if (chosenChannel) window.codewarp?.setUpdateChannel(chosenChannel);
   setStatus('Creating VM…');
   const canvas = $<HTMLCanvasElement>('stage');
   const host = new VmHost(canvas);

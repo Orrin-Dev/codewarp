@@ -14,6 +14,7 @@ interface CodewarpBridge {
   /** Ask for updates now. Resolves with a short message for the person. */
   checkForUpdates(): Promise<string>;
   setAutoUpdate(enabled: boolean): void;
+  setUpdateChannel(channel: 'dev' | 'production'): void;
   onUpdateStatus(listener: (message: string) => void): void;
 }
 

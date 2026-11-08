@@ -51,6 +51,7 @@ interface Stored {
   fps?: number;
   scratchSprites?: boolean;
   autoUpdate?: boolean;
+  updateChannel?: 'dev' | 'production';
 }
 
 const KEY = 'codewarp.settings';
@@ -266,4 +267,19 @@ export function saveAutoUpdate(on: boolean): void {
   stored.autoUpdate = on;
   write(stored);
   window.codewarp?.setAutoUpdate(on);
+}
+
+export type UpdateChannel = 'dev' | 'production';
+
+/** The branch the person chose to update from, or null to follow the one this build came from. */
+export function getUpdateChannel(): UpdateChannel | null {
+  const channel = read().updateChannel;
+  return channel === 'dev' || channel === 'production' ? channel : null;
+}
+
+export function saveUpdateChannel(channel: UpdateChannel): void {
+  const stored = read();
+  stored.updateChannel = channel;
+  write(stored);
+  window.codewarp?.setUpdateChannel(channel);
 }

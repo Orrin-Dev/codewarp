@@ -14,6 +14,7 @@ function createWindow() {
     width: 1400,
     height: 900,
     title: 'Codewarp',
+    icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -130,6 +131,20 @@ ipcMain.handle('update:check', async () => {
   } finally {
     updateBusy = false;
   }
+});
+
+const FEEDS = {
+  production: 'https://github.com/Orrin-Dev/codewarp/releases/latest/download',
+  dev: 'https://github.com/Orrin-Dev/codewarp/releases/download/dev',
+};
+
+// The person can follow a different branch than the one they downloaded. Moving between them can mean
+// going to a lower version number (production 0.2.0 -> dev 0.2.0-dev.7), so downgrades are allowed then.
+ipcMain.on('update:channel', (_event, channel) => {
+  if (!updatesSupported() || !FEEDS[channel]) return;
+  const builtFor = /-dev\./.test(app.getVersion()) ? 'dev' : 'production';
+  autoUpdater.setFeedURL({ provider: 'generic', url: FEEDS[channel], channel: 'latest' });
+  autoUpdater.allowDowngrade = channel !== builtFor;
 });
 
 ipcMain.on('update:auto', (_event, enabled) => {
