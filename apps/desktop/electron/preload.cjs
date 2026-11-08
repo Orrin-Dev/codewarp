@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('codewarp', {
   openProject: () => ipcRenderer.invoke('project:open'),
   saveProject: (suggestedName, data) =>
     ipcRenderer.invoke('project:save', { suggestedName, data }),
+  pickFile: (title, extensions) => ipcRenderer.invoke('file:pick', { title, extensions }),
   getVersion: () => ipcRenderer.invoke('app:version'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   setAutoUpdate: (enabled) => ipcRenderer.send('update:auto', Boolean(enabled)),

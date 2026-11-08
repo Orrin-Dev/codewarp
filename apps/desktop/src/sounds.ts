@@ -1,4 +1,5 @@
 import type { VmHost } from './vmHost';
+import { logDiag } from './diagnostics';
 import { pickFile, baseName, errorMessage } from './files';
 import {
   type Pcm,
@@ -89,6 +90,7 @@ export class SoundsPanel {
   private dragMoved = false;
 
   private recorder: MediaRecorder | null = null;
+  private readonly errorLine = document.createElement('div');
 
   constructor(
     root: HTMLElement,
@@ -107,12 +109,20 @@ export class SoundsPanel {
     const upload = document.createElement('button');
     upload.type = 'button';
     upload.textContent = 'Upload';
-    upload.addEventListener('click', () => void this.guard(() => this.uploadSound()));
+    upload.addEventListener('click', () => {
+      this.showError('');
+      void this.guard(() => this.uploadSound());
+    });
     this.recordButton.type = 'button';
     this.recordButton.textContent = '● Record';
-    this.recordButton.addEventListener('click', () => void this.guard(() => this.toggleRecording()));
+    this.recordButton.addEventListener('click', () => {
+      this.showError('');
+      void this.guard(() => this.toggleRecording());
+    });
     footer.append(upload, this.recordButton);
-    side.append(this.list, footer);
+    this.errorLine.className = 'cw-asset-error';
+    this.errorLine.hidden = true;
+    side.append(this.list, this.errorLine, footer);
 
     // ---- right: editor
     this.editor.className = 'cw-sound-editor';
@@ -190,12 +200,21 @@ export class SoundsPanel {
     return this.audioContext;
   }
 
+  /** Show a problem next to the buttons, where the person is looking (the status bar is easy to miss). */
+  private showError(message: string): void {
+    this.errorLine.textContent = message;
+    this.errorLine.hidden = !message;
+  }
+
   private async guard(fn: () => Promise<void>): Promise<void> {
     try {
       await fn();
     } catch (error) {
       console.error(error);
-      this.setStatus(`Sound error: ${errorMessage(error)}`);
+      const message = describeSoundError(error);
+      logDiag('sound', message);
+      this.setStatus(`Sound error: ${message}`);
+      this.showError(message);
     }
   }
 
@@ -617,7 +636,15 @@ export class SoundsPanel {
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('Recording is not available here');
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error: any) {
+      const name = error?.name ?? '';
+      if (name === 'NotFoundError') throw new Error('No microphone was found. Plug one in and try again.');
+      if (name === 'NotAllowedError') throw new Error('Microphone access was blocked. Check your system sound/privacy settings.');
+      throw error;
+    }
     const recorder = new MediaRecorder(stream);
     const chunks: Blob[] = [];
     recorder.ondataavailable = (e) => {
@@ -640,4 +667,10 @@ export class SoundsPanel {
     this.recordButton.textContent = '■ Stop recording';
     this.recordButton.classList.add('cw-recording');
   }
+}
+
+function describeSoundError(error: unknown): string {
+  const text = errorMessage(error);
+  if (/decode/i.test(text)) return `This file could not be read as audio (${text}). Try a .wav or .mp3.`;
+  return text;
 }

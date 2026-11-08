@@ -47,6 +47,20 @@ ipcMain.handle('project:open', async () => {
   return { name: path.basename(filePath), data };
 });
 
+// A native file picker for uploads (costumes, sounds). It is the same dialog "Open project" uses, which
+// works everywhere; a hidden <input type=file> in the page did not on some Linux setups.
+ipcMain.handle('file:pick', async (_event, { title, extensions }) => {
+  const exts = Array.isArray(extensions) ? extensions.filter((e) => /^[a-z0-9]+$/i.test(e)) : [];
+  const result = await dialog.showOpenDialog({
+    title: String(title || 'Choose a file'),
+    filters: exts.length ? [{ name: 'Supported files', extensions: exts }, { name: 'All files', extensions: ['*'] }] : [{ name: 'All files', extensions: ['*'] }],
+    properties: ['openFile'],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  const filePath = result.filePaths[0];
+  return { name: path.basename(filePath), data: await fs.readFile(filePath) };
+});
+
 ipcMain.handle('project:save', async (_event, { suggestedName, data }) => {
   const result = await dialog.showSaveDialog({
     title: 'Save project',
@@ -75,6 +89,25 @@ function updatesSupported() {
 function tell(message) {
   console.log('[update]', message);
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send('update:status', message);
+}
+
+/**
+ * Install the downloaded update and restart. The package manager replaces the app's files while we
+ * are still running, which crashes the open window, so close every window first, stop our own "quit
+ * when the last window closes" rule from racing the installer, and make sure we really exit afterwards.
+ */
+function installNow() {
+  app.removeAllListeners('window-all-closed');
+  for (const win of BrowserWindow.getAllWindows()) win.destroy();
+  setImmediate(() => {
+    try {
+      autoUpdater.quitAndInstall(false, true);
+    } catch (error) {
+      console.warn('[update] quitAndInstall failed:', error);
+    }
+    // If the app is still here a few seconds after the install finished, leave anyway (and relaunch).
+    setTimeout(() => app.exit(0), 4000);
+  });
 }
 
 function setupAutoUpdate() {
@@ -110,7 +143,7 @@ function setupAutoUpdate() {
       defaultId: 0,
       cancelId: 1,
     });
-    if (response === 0) autoUpdater.quitAndInstall();
+    if (response === 0) installNow();
   });
 
   const run = () => {

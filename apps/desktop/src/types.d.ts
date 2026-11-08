@@ -10,6 +10,7 @@ declare module 'scratch-blocks';
 interface CodewarpBridge {
   openProject(): Promise<{ name: string; data: Uint8Array } | null>;
   saveProject(suggestedName: string, data: Uint8Array): Promise<string | null>;
+  pickFile(title: string, extensions: string[]): Promise<{ name: string; data: Uint8Array } | null>;
   getVersion(): Promise<string>;
   /** Ask for updates now. Resolves with a short message for the person. */
   checkForUpdates(): Promise<string>;
