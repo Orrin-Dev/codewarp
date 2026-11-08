@@ -187,7 +187,20 @@ wss.on('connection', (ws) => {
       }
       case 'cursor': {
         if (typeof msg.x !== 'number' || typeof msg.y !== 'number') return;
-        broadcast(room, { t: 'cursor', from: me.id, target: String(msg.target ?? ''), x: msg.x, y: msg.y }, me.id);
+        broadcast(room, { t: 'cursor', from: me.id, target: String(msg.target ?? '').slice(0, 80), x: msg.x, y: msg.y }, me.id);
+        break;
+      }
+      case 'drag': {
+        if (typeof msg.dx !== 'number' || typeof msg.dy !== 'number') return;
+        broadcast(
+          room,
+          { t: 'drag', from: me.id, target: String(msg.target ?? '').slice(0, 80), block: String(msg.block ?? '').slice(0, 80), dx: msg.dx, dy: msg.dy },
+          me.id,
+        );
+        break;
+      }
+      case 'select': {
+        broadcast(room, { t: 'select', from: me.id, target: String(msg.target ?? '').slice(0, 80), block: String(msg.block ?? '').slice(0, 80) }, me.id);
         break;
       }
       case 'ping':

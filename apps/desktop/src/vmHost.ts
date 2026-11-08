@@ -61,8 +61,27 @@ export class VmHost {
     this.vm.attachV2SVGAdapter(new SVGRenderer());
     this.vm.attachV2BitmapAdapter(new BitmapAdapter());
 
-    this.vm.setCompatibilityMode(true);
+    this.setFramerate(60);
     this.vm.start();
+  }
+
+  /**
+   * Run projects at `fps` frames per second (Scratch's own default is 30). scratch-vm reads its step
+   * interval from static getters on Runtime, so we replace those and restart the interval.
+   */
+  setFramerate(fps: number): void {
+    const clamped = Math.max(10, Math.min(250, Math.round(fps) || 60));
+    try {
+      const Runtime: any = this.vm.runtime.constructor;
+      const interval = 1000 / clamped;
+      for (const key of ['THREAD_STEP_INTERVAL', 'THREAD_STEP_INTERVAL_COMPATIBILITY']) {
+        Object.defineProperty(Runtime, key, { configurable: true, get: () => interval });
+      }
+      this.vm.setCompatibilityMode(false);
+      this.vm.runtime.currentStepTime = interval;
+    } catch (error) {
+      console.warn('Could not change the frame rate', error);
+    }
   }
 
   /** Load an .sb3 (ArrayBuffer) or a project.json string. */

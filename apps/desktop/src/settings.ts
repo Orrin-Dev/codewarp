@@ -48,6 +48,8 @@ interface Stored {
   /** Themes the user saved under their own name. */
   customThemes?: Record<string, ThemeColors>;
   serverUrl?: string;
+  fps?: number;
+  scratchSprites?: boolean;
 }
 
 const KEY = 'codewarp.settings';
@@ -222,4 +224,34 @@ export function testServer(url: string, timeoutMs = 6000): Promise<string | null
     socket.onerror = () => finish('Could not connect');
     socket.onclose = () => finish('Could not connect');
   });
+}
+
+// ---- frame rate / layout ----------------------------------------------------
+
+export const DEFAULT_FPS = 60;
+
+export function getFramerate(): number {
+  const fps = read().fps;
+  return typeof fps === 'number' && fps >= 10 && fps <= 250 ? fps : DEFAULT_FPS;
+}
+
+export function saveFramerate(fps: number): void {
+  const stored = read();
+  stored.fps = Math.max(10, Math.min(250, Math.round(fps)));
+  write(stored);
+}
+
+export function getScratchSprites(): boolean {
+  return read().scratchSprites === true;
+}
+
+export function applyScratchSprites(on: boolean): void {
+  document.body.classList.toggle('cw-scratch-sprites', on);
+}
+
+export function saveScratchSprites(on: boolean): void {
+  const stored = read();
+  stored.scratchSprites = on;
+  write(stored);
+  applyScratchSprites(on);
 }

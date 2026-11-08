@@ -48,6 +48,11 @@ Open the **Settings** tab (top right of the editor) to:
 
 - **Change the colours.** Pick a preset or set the accent, background, panel and text colours yourself.
 - **Change the collaboration server.** The project server is the default. Enter another `ws://` or `wss://` address and press Save, use **Test connection** to check it, or press **Use default server** to go back. The change applies the next time you join a room.
+- **Frame rate.** Projects run at 60 fps by default; set 10 to 250 fps.
+- **Scratch-style sprite area.** A lighter, Scratch-like sprite panel.
+- **Diagnostics.** Errors and sync problems are recorded; copy them when reporting a bug.
+
+The **backpack** (bottom of the Code tab) keeps scripts, costumes and sounds between projects. Drag a block stack onto it, or press the backpack button on a costume or sound; click an item to add it to the current sprite.
 
 ## Contributing
 
@@ -151,12 +156,13 @@ To make your server the default in your own builds, change `COLLAB_SERVER_URL` i
 
 ## Hosting it in Pterodactyl
 
-If you run a game panel, the server fits in a generic **Node.js** egg (Node 22 image):
+**Easiest: the egg.** Every release includes `egg-codewarp-collab.json`.
 
-1. Upload all the files from the archive (`server.ts`, `rtc.ts`, `index.js`, `package.json`). `index.js` is included for this: it starts the server on the panel's port.
-2. Egg settings: *User Uploaded Files* `0`, *Main file* `index.js`, *Additional Node packages* `ws`.
-3. To update later, upload the new `server.ts` and `rtc.ts` from a newer archive over the old ones and restart the server.
-4. Proxy your domain to the allocated port as in step 3. Containers are usually reached on the Docker gateway address (for example `172.18.0.1:PORT`) rather than `127.0.0.1`.
+1. In the admin area go to Nests, pick a nest (or create one), choose Import Egg and upload the file.
+2. Create a server from the egg and give it a port allocation. The `RELEASE` variable is `latest` by default; set a tag such as `v0.1.0` to pin a version. Reinstall the server to update it.
+3. Start it. The console says "listening on". Then proxy your domain to the allocated port as in step 3 above (containers are usually reached on the Docker gateway address, for example `172.18.0.1:PORT`, rather than `127.0.0.1`).
+
+**Without the egg:** use a generic Node.js egg (Node 22 image). Upload `server.ts`, `rtc.ts`, `index.js` and `package.json` from the archive, set *Main file* to `index.js` and *Additional Node packages* to `ws`. To update, upload the newer `server.ts` and `rtc.ts` over the old ones and restart.
 
 ## Limits
 

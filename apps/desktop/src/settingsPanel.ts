@@ -8,6 +8,10 @@ import {
   THEME_PRESETS,
   applyTheme,
   collabServerUrl,
+  getFramerate,
+  saveFramerate,
+  getScratchSprites,
+  saveScratchSprites,
   currentTheme,
   isValidServerUrl,
   resetTheme,
@@ -36,10 +40,15 @@ export class SettingsPanel {
   private theme: ThemeColors = currentTheme();
   private readonly colorInputs = new Map<keyof ThemeColors, HTMLInputElement>();
 
-  constructor(private readonly root: HTMLElement) {
+  constructor(
+    private readonly root: HTMLElement,
+    private readonly onFramerate: (fps: number) => void = () => {},
+    private readonly diagnostics: { text(): string; clear(): void } | null = null,
+  ) {
     root.classList.add('cw-settings');
     const page = element('div', 'cw-settings-page');
-    page.append(this.buildAppearance(), this.buildServer());
+    page.append(this.buildAppearance(), this.buildProject(), this.buildServer());
+    if (this.diagnostics) page.append(this.buildDiagnostics(this.diagnostics));
     root.replaceChildren(page);
   }
 
@@ -146,6 +155,69 @@ export class SettingsPanel {
   }
 
   // ---- server ----
+
+  private buildProject(): HTMLElement {
+    const section = element('section', 'cw-settings-section');
+    section.append(element('h2', '', 'Projects'));
+    section.append(element('p', 'cw-settings-hint', 'Frame rate projects run at. Scratch uses 30; Codewarp defaults to 60.'));
+    const row = element('div', 'cw-settings-buttons');
+    const input = element('input');
+    input.type = 'number';
+    input.min = '10';
+    input.max = '250';
+    input.value = String(getFramerate());
+    const apply = (fps: number): void => {
+      if (!Number.isFinite(fps)) return;
+      saveFramerate(fps);
+      input.value = String(getFramerate());
+      this.onFramerate(getFramerate());
+    };
+    input.addEventListener('change', () => apply(Number(input.value)));
+    row.append(input, element('span', '', 'fps'));
+    for (const preset of [30, 60, 120]) {
+      const button = element('button', '', String(preset));
+      button.type = 'button';
+      button.addEventListener('click', () => apply(preset));
+      row.appendChild(button);
+    }
+    section.appendChild(row);
+
+    const label = element('label', 'cw-check-row');
+    const check = element('input');
+    check.type = 'checkbox';
+    check.checked = getScratchSprites();
+    check.addEventListener('change', () => saveScratchSprites(check.checked));
+    label.append(check, element('span', '', 'Scratch-style sprite area (blue panel, big sprite tiles)'));
+    section.appendChild(label);
+    return section;
+  }
+
+  private buildDiagnostics(diag: { text(): string; clear(): void }): HTMLElement {
+    const section = element('section', 'cw-settings-section');
+    section.append(element('h2', '', 'Diagnostics'));
+    section.append(element('p', 'cw-settings-hint', 'Errors and sync problems are recorded here. If something breaks, copy this and send it to me.'));
+    const box = element('textarea', 'cw-diag');
+    box.readOnly = true;
+    box.rows = 8;
+    const refresh = (): void => {
+      box.value = diag.text() || '(nothing recorded)';
+    };
+    const buttons = element('div', 'cw-settings-buttons');
+    const reload = element('button', '', 'Refresh');
+    const copy = element('button', '', 'Copy');
+    const clear = element('button', '', 'Clear');
+    for (const b of [reload, copy, clear]) b.type = 'button';
+    reload.addEventListener('click', refresh);
+    copy.addEventListener('click', () => void navigator.clipboard?.writeText(diag.text()));
+    clear.addEventListener('click', () => {
+      diag.clear();
+      refresh();
+    });
+    buttons.append(reload, copy, clear);
+    refresh();
+    section.append(box, buttons);
+    return section;
+  }
 
   private buildServer(): HTMLElement {
     const section = element('section', 'cw-settings-section');

@@ -10,7 +10,9 @@ import { pickFile } from './files';
 import { Collab } from './collab';
 import { CollabUi } from './collabUi';
 import { SettingsPanel } from './settingsPanel';
-import { applySavedTheme } from './settings';
+import { applySavedTheme, applyScratchSprites, getFramerate, getScratchSprites } from './settings';
+import { Backpack } from './backpack';
+import { diagnostics, installDiagnostics } from './diagnostics';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -70,10 +72,13 @@ const SHAPE_COLORS: [string, string][] = [
 ];
 
 function boot(): void {
+  installDiagnostics();
   applySavedTheme();
+  applyScratchSprites(getScratchSprites());
   setStatus('Creating VM…');
   const canvas = $<HTMLCanvasElement>('stage');
   const host = new VmHost(canvas);
+  host.setFramerate(getFramerate());
 
   setStatus('Creating blocks editor…');
   const editor = new BlocksEditor($('blocks-host'), host.vm);
@@ -125,9 +130,15 @@ function boot(): void {
 
   // ---- Tabs: Code / Costumes / Sounds -----------------------------------
 
-  const costumes = new CostumesPanel($('pane-costumes'), host, setStatus);
-  const sounds = new SoundsPanel($('pane-sounds'), host, setStatus);
-  new SettingsPanel($('pane-settings'));
+  const backpack = new Backpack($('backpack'), {
+    vm: host.vm,
+    setStatus,
+    selectedStackXml: () => editor.selectedStackXml(),
+    insertStackXml: (xml) => editor.insertStackXml(xml),
+  });
+  const costumes = new CostumesPanel($('pane-costumes'), host, setStatus, (costume) => backpack.addCostume(costume));
+  const sounds = new SoundsPanel($('pane-sounds'), host, setStatus, (sound) => backpack.addSound(sound));
+  new SettingsPanel($('pane-settings'), (fps) => host.setFramerate(fps), diagnostics);
   const tabs = {
     code: { tab: $('tab-code'), pane: $('pane-code') },
     costumes: { tab: $('tab-costumes'), pane: $('pane-costumes') },

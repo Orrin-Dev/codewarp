@@ -13,6 +13,18 @@ const SYNC_EVENTS = new Set([
   'comment_create', 'comment_change', 'comment_move', 'comment_delete',
 ]);
 
+/** What this person is doing in the editor besides editing: selecting a block, or dragging one. */
+export type Presence =
+  | { kind: 'select'; target: string; block: string }
+  | { kind: 'drag'; target: string; block: string; dx: number; dy: number };
+
+const DRAG_SEND_MS = 50;
+/** How long a block that someone just dropped stays where their drag ended, waiting for the move itself to arrive. */
+const DROP_SETTLE_MS = 300;
+
+/** Edits that can change what the palette shows (variables, and custom block definitions). */
+const PALETTE_PATTERN = /procedures_(definition|prototype)/;
+
 /** A workspace edit in a form that can be sent to other people. */
 export interface LocalEdit {
   /** Sprite name ("Stage" for the stage). */
@@ -42,6 +54,19 @@ function resolveBlocks(): any {
 export class BlocksEditor {
   private workspace: any;
   private readonly editListeners = new Set<(edit: LocalEdit) => void>();
+  private readonly presenceListeners = new Set<(presence: Presence) => void>();
+
+  // Skipping needless reloads: what is on screen, and whether the user changed it since.
+  private loadedXml = '';
+  private loadedTargetId = '';
+  private workspaceDirty = true;
+
+  // Other people's selections and drags, drawn on blocks.
+  private readonly remoteSelected = new Map<string, string>();
+  private readonly remoteDragging = new Map<string, { block: string; timer?: number }>();
+  private pointerStart: { x: number; y: number } | null = null;
+  private draggingBlock = '';
+  private lastDragSent = 0;
 
   constructor(private readonly host: HTMLElement, private readonly vm: any) {
     ScratchBlocks = resolveBlocks();
@@ -86,8 +111,11 @@ export class BlocksEditor {
     // category when blocks, variables or custom blocks change, or new entries only show up after
     // switching categories.
     this.workspace.addChangeListener((event: any) => {
-      if (REFRESH_EVENTS.has(event?.type)) this.scheduleToolboxRefresh();
+      if (event?.type !== 'ui') this.workspaceDirty = true;
+      if (REFRESH_EVENTS.has(event?.type) && this.affectsPalette(event)) this.scheduleToolboxRefresh();
+      if (event?.type === 'ui' && event.element === 'selected') this.emitPresence({ kind: 'select', target: this.targetName(), block: String(event.newValue ?? '') });
     });
+    this.watchDrags();
 
     // The checkboxes in the palette show which monitors are on. Redraw when that changes, whoever changed it.
     let visibleMonitors = '';
@@ -122,6 +150,154 @@ export class BlocksEditor {
     });
   }
 
+  // ---- presence: selecting and dragging blocks --------------------------------------------
+
+  private targetName(): string {
+    return this.vm.editingTarget?.getName?.() ?? '';
+  }
+
+  /** Be told when the user selects or drags a block. Returns a function that stops listening. */
+  onPresence(listener: (presence: Presence) => void): () => void {
+    this.presenceListeners.add(listener);
+    return () => this.presenceListeners.delete(listener);
+  }
+
+  private emitPresence(presence: Presence): void {
+    if (this.presenceListeners.size === 0 || !presence.target) return;
+    for (const listener of this.presenceListeners) listener(presence);
+  }
+
+  /** Notice when the user is dragging a block (it gets the class blocklyDragging) and report how far it has moved. */
+  private watchDrags(): void {
+    const endDrag = () => {
+      if (this.draggingBlock) this.emitPresence({ kind: 'drag', target: this.targetName(), block: '', dx: 0, dy: 0 });
+      this.draggingBlock = '';
+      this.pointerStart = null;
+    };
+    this.host.addEventListener('pointerdown', (e) => (this.pointerStart = { x: e.clientX, y: e.clientY }), true);
+    window.addEventListener('pointerup', endDrag, true);
+    window.addEventListener('pointercancel', endDrag, true);
+    window.addEventListener(
+      'pointermove',
+      (e) => {
+        if (!this.pointerStart || this.presenceListeners.size === 0) return;
+        const selected = ScratchBlocks.selected;
+        const dragging = Boolean(selected?.getSvgRoot?.()?.classList?.contains('blocklyDragging'));
+        if (!dragging) {
+          if (this.draggingBlock) endDrag();
+          return;
+        }
+        const now = performance.now();
+        if (selected.id === this.draggingBlock && now - this.lastDragSent < DRAG_SEND_MS) return;
+        this.draggingBlock = selected.id;
+        this.lastDragSent = now;
+        const scale = this.workspace.scale || 1;
+        this.emitPresence({
+          kind: 'drag',
+          target: this.targetName(),
+          block: selected.id,
+          dx: (e.clientX - this.pointerStart.x) / scale,
+          dy: (e.clientY - this.pointerStart.y) / scale,
+        });
+      },
+      true,
+    );
+  }
+
+  private remoteBlock(target: string, id: string): any | null {
+    if (!id || this.targetName() !== target) return null;
+    return this.workspace.getBlockById(id) ?? null;
+  }
+
+  /** Outline the block somebody else has selected, in their colour. */
+  showRemoteSelect(peer: string, color: string, target: string, id: string): void {
+    this.clearRemoteSelect(peer);
+    const block = this.remoteBlock(target, id);
+    const root: SVGElement | undefined = block?.getSvgRoot?.();
+    if (!root) return;
+    root.classList.add('cw-remote-selected');
+    root.style.setProperty('--peer-color', color);
+    this.remoteSelected.set(peer, id);
+  }
+
+  private clearRemoteSelect(peer: string): void {
+    const id = this.remoteSelected.get(peer);
+    if (!id) return;
+    this.remoteSelected.delete(peer);
+    const root: SVGElement | undefined = this.workspace.getBlockById(id)?.getSvgRoot?.();
+    root?.classList.remove('cw-remote-selected');
+  }
+
+  /** Move a block on screen the way somebody else is dragging it. The real move arrives when they let go. */
+  showRemoteDrag(peer: string, color: string, target: string, id: string, dx: number, dy: number): void {
+    const state = this.remoteDragging.get(peer);
+    if (!id) {
+      if (state) this.finishRemoteDrag(peer);
+      return;
+    }
+    if (state && state.block !== id) this.finishRemoteDrag(peer, true);
+    const block = this.remoteBlock(target, id);
+    const root: SVGElement | undefined = block?.getSvgRoot?.();
+    // Only loose blocks can follow the mouse. A block still inside a stack waits until it has been pulled out.
+    if (!block || !root || block.getParent()) return;
+    const current = this.remoteDragging.get(peer);
+    if (current?.timer) window.clearTimeout(current.timer);
+    this.remoteDragging.set(peer, { block: id });
+    const base = block.getRelativeToSurfaceXY();
+    root.classList.add('cw-remote-drag');
+    root.style.setProperty('--peer-color', color);
+    root.setAttribute('transform', `translate(${base.x + dx},${base.y + dy})`);
+  }
+
+  private finishRemoteDrag(peer: string, now = false): void {
+    const state = this.remoteDragging.get(peer);
+    if (!state) return;
+    const settle = () => {
+      this.remoteDragging.delete(peer);
+      const block = this.workspace.getBlockById(state.block);
+      const root: SVGElement | undefined = block?.getSvgRoot?.();
+      if (!block || !root) return;
+      root.classList.remove('cw-remote-drag');
+      // If the move already arrived Blockly has placed the block; otherwise put it back where it really is.
+      if (!block.getParent()) {
+        const xy = block.getRelativeToSurfaceXY();
+        root.setAttribute('transform', `translate(${xy.x},${xy.y})`);
+      }
+    };
+    if (now) settle();
+    else state.timer = window.setTimeout(settle, DROP_SETTLE_MS);
+  }
+
+  /** Forget everything drawn for somebody who left or stopped sharing. */
+  clearRemote(peer: string): void {
+    this.clearRemoteSelect(peer);
+    if (this.remoteDragging.has(peer)) this.finishRemoteDrag(peer, true);
+  }
+
+  clearAllRemote(): void {
+    for (const peer of [...this.remoteSelected.keys(), ...this.remoteDragging.keys()]) this.clearRemote(peer);
+  }
+
+  /** Does this edit change what the palette shows? Ordinary blocks do not; variables and custom blocks do. */
+  private affectsPalette(event: any): boolean {
+    switch (event?.type) {
+      case 'var_create':
+      case 'var_delete':
+      case 'var_rename':
+        return true;
+      case 'create':
+        return PALETTE_PATTERN.test(String(event.xml?.outerHTML ?? ''));
+      case 'delete':
+        return PALETTE_PATTERN.test(String(event.oldXml?.outerHTML ?? ''));
+      case 'change': {
+        const type: string | undefined = this.workspace.getBlockById(event.blockId)?.type;
+        return Boolean(type && type.startsWith('procedures_'));
+      }
+      default:
+        return false;
+    }
+  }
+
   /** Be told about every edit the user makes. Returns a function that stops listening. */
   onLocalEdit(listener: (edit: LocalEdit) => void): () => void {
     this.editListeners.add(listener);
@@ -152,12 +328,17 @@ export class BlocksEditor {
 
     if (editing || (isVar && !isLocalVar)) {
       ScratchBlocks.Events.disable();
+      // Deleting a used variable asks "are you sure?". The person who deleted it already answered,
+      // so a remote delete must not ask everyone else.
+      const originalConfirm = ScratchBlocks.confirm;
+      ScratchBlocks.confirm = (_message: string, callback: (ok: boolean) => void) => callback(true);
       try {
         event.run(true);
       } catch (error) {
         // Happens when two people touched the same block at once, e.g. deleting something already gone.
         console.warn('Remote edit did not apply to the workspace', edit.event, error);
       } finally {
+        ScratchBlocks.confirm = originalConfirm;
         ScratchBlocks.Events.enable();
       }
     }
@@ -178,7 +359,12 @@ export class BlocksEditor {
     } catch (error) {
       console.warn('Remote edit did not apply to the VM', edit.event, error);
     }
-    this.scheduleToolboxRefresh();
+    const eventType = String(edit.event.type);
+    const text = String(edit.event.xml ?? edit.event.oldXml ?? '');
+    const blockType = edit.event.blockId ? this.workspace.getBlockById(String(edit.event.blockId))?.type : '';
+    if (eventType.startsWith('var_') || PALETTE_PATTERN.test(text) || String(blockType ?? '').startsWith('procedures_')) {
+      this.scheduleToolboxRefresh();
+    }
   }
 
   /** Convert a mouse position on screen to workspace coordinates, or null if it isn't over the workspace. */
@@ -217,14 +403,24 @@ export class BlocksEditor {
   private scheduleToolboxRefresh(): void {
     window.clearTimeout(this.refreshTimer);
     this.refreshTimer = window.setTimeout(() => {
-      try {
-        if (typeof this.workspace.refreshToolboxSelection_ === 'function') {
-          this.workspace.refreshToolboxSelection_();
-        }
-      } catch (error) {
-        console.warn('Toolbox refresh failed', error);
+      // Rebuilding the palette is slow, so never do it while a block is being dragged: try again right after.
+      if (this.workspace.isDragging?.()) {
+        this.scheduleToolboxRefresh();
+        return;
       }
-    }, 50);
+      const run = () => {
+        try {
+          if (typeof this.workspace.refreshToolboxSelection_ === 'function') {
+            this.workspace.refreshToolboxSelection_();
+          }
+        } catch (error) {
+          console.warn('Toolbox refresh failed', error);
+        }
+      };
+      const idle = (window as any).requestIdleCallback as ((cb: () => void, opts: { timeout: number }) => void) | undefined;
+      if (idle) idle(run, { timeout: 1000 });
+      else run();
+    }, 250);
   }
 
   /** The stage gets a smaller palette than a sprite (no motion, no talking, no touching...). */
@@ -241,19 +437,63 @@ export class BlocksEditor {
 
   private onWorkspaceUpdate(data: { xml: string }): void {
     this.syncToolboxToTarget();
+    const targetId: string = this.vm.editingTarget?.id ?? '';
+    // The VM announces the same sprite again after many things (a collaborator's change elsewhere, switching
+    // tabs...). Rebuilding hundreds of blocks for nothing is the slowest thing the editor does, so skip it.
+    if (!this.workspaceDirty && targetId === this.loadedTargetId && data.xml === this.loadedXml) return;
+
+    const started = performance.now();
+    this.clearAllRemote();
     // Detach the VM listener while loading so loading doesn't echo back as edits.
     this.workspace.removeChangeListener(this.vm.blockListener);
     // Switch events off while loading: reloading a sprite is not an edit, and collaborators must not see it as one.
     ScratchBlocks.Events.disable();
+    // Measuring text is the expensive part of drawing a block. Remember the width of each string while loading,
+    // because a big script repeats the same few words (move, steps, turn, wait...) hundreds of times.
+    ScratchBlocks.Field?.startCache?.();
     try {
       const dom = ScratchBlocks.Xml.textToDom(data.xml);
       ScratchBlocks.Xml.clearWorkspaceAndLoadFromXml(dom, this.workspace);
+      this.loadedXml = data.xml;
+      this.loadedTargetId = targetId;
+      this.workspaceDirty = false;
     } catch (error) {
       console.error('Failed to load workspace XML', error);
     } finally {
+      ScratchBlocks.Field?.stopCache?.();
       ScratchBlocks.Events.enable();
     }
     this.workspace.addChangeListener(this.vm.blockListener);
+    const blocks = this.workspace.getAllBlocks?.().length ?? 0;
+    if (blocks > 100) console.info(`[blocks] opened ${blocks} blocks in ${Math.round(performance.now() - started)} ms`);
+  }
+
+  /** XML of the whole stack the selected block belongs to (without ids), for the backpack. */
+  selectedStackXml(): string | null {
+    const selected = ScratchBlocks.selected;
+    if (!selected || !selected.getRootBlock) return null;
+    try {
+      const dom = ScratchBlocks.Xml.blockToDom(selected.getRootBlock());
+      dom.removeAttribute('x');
+      dom.removeAttribute('y');
+      for (const node of Array.from(dom.querySelectorAll('block, shadow')) as Element[]) node.removeAttribute('id');
+      dom.removeAttribute('id');
+      return ScratchBlocks.Xml.domToText(dom);
+    } catch (error) {
+      console.error('Could not read the selected blocks', error);
+      return null;
+    }
+  }
+
+  /** Put a stack saved from the backpack into the workspace, near the top left of what is visible. */
+  insertStackXml(xml: string): void {
+    const dom = ScratchBlocks.Xml.textToDom(`<xml>${xml}</xml>`).firstElementChild;
+    if (!dom) return;
+    const block = ScratchBlocks.Xml.domToBlock(dom, this.workspace);
+    const metrics = this.workspace.getMetrics();
+    const scale = this.workspace.scale || 1;
+    block.moveBy((metrics.viewLeft + 40) / scale, (metrics.viewTop + 40) / scale);
+    block.select?.();
   }
 
   /** Call after the host element changes size or becomes visible again. */

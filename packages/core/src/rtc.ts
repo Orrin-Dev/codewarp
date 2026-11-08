@@ -95,7 +95,15 @@ export type Op =
 export type ClientMessage =
   | { t: 'join'; room: string; name: string }
   | { t: 'ops'; ops: Op[] }
+  /**
+   * Where the mouse is. `target` is a sprite name (x, y in workspace units), '@window' (x, y are fractions
+   * of the app window, 0 to 1), or '@hide' (the mouse left the app or the app lost focus).
+   */
   | { t: 'cursor'; target: string; x: number; y: number }
+  /** Dragging a block right now (`block` is '' when the drag ended). dx, dy: how far it moved, in workspace units. */
+  | { t: 'drag'; target: string; block: string; dx: number; dy: number }
+  /** The block this person has selected (or '' for none). */
+  | { t: 'select'; target: string; block: string }
   | { t: 'ping' }
   /** Ask the room host for a full copy of the project. */
   | { t: 'snapshot-request' }
@@ -122,6 +130,8 @@ export type ServerMessage =
   /** Your own ops were accepted and got this sequence number. */
   | { t: 'ack'; seq: number }
   | { t: 'cursor'; from: string; target: string; x: number; y: number }
+  | { t: 'drag'; from: string; target: string; block: string; dx: number; dy: number }
+  | { t: 'select'; from: string; target: string; block: string }
   | { t: 'pong' }
   | { t: 'snapshot-request'; from: string }
   | { t: 'snapshot'; seq: number; data: string }

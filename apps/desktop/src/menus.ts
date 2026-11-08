@@ -32,13 +32,27 @@ export function installProjectMenus(Blockly: any, vm: any): void {
     return list;
   };
 
+  /**
+   * A dropdown must never have zero options: Blockly throws while laying out the flyout, and every
+   * block after it piles up at the top of the palette. (The stage with no sprites hits this.)
+   */
+  const safeOptions = (start: Option[], options: () => Option[]): Option[] => {
+    try {
+      const list = start.concat(options());
+      return list.length ? list : [['', '']];
+    } catch (error) {
+      console.error('Dropdown options failed', error);
+      return start.length ? start : [['', '']];
+    }
+  };
+
   const define = (type: string, field: string, options: () => Option[], colours: any, start: Option[] = []): void => {
     const definition = Blockly.Blocks[type];
     if (!definition) return;
     definition.init = function () {
       this.jsonInit({
         message0: '%1',
-        args0: [{ type: 'field_dropdown', name: field, options: () => start.concat(options()) }],
+        args0: [{ type: 'field_dropdown', name: field, options: () => safeOptions(start, options) }],
         inputsInline: true,
         output: 'String',
         colour: colours.secondary,

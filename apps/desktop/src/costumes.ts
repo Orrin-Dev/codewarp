@@ -52,6 +52,7 @@ export class CostumesPanel {
     root: HTMLElement,
     private readonly host: VmHost,
     private readonly setStatus: (message: string) => void,
+    private readonly toBackpack: (item: any) => Promise<void> = async () => {},
   ) {
     root.classList.add('cw-costumes');
 
@@ -189,6 +190,7 @@ export class CostumesPanel {
       };
       button('↑', 'Move up', index === 0, () => this.move(target, index, index - 1));
       button('↓', 'Move down', index === costumes.length - 1, () => this.move(target, index, index + 1));
+      button('🎒', 'Add to backpack', false, () => this.toBackpack(costume));
       button('⧉', 'Duplicate', false, async () => {
         await this.vm.duplicateCostume(index);
         this.refresh(true);

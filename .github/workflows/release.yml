@@ -92,6 +92,7 @@ jobs:
           mkdir -p out
           cp -v apps/desktop/release/*.AppImage apps/desktop/release/*.deb apps/desktop/release/*.rpm out/
           cp -v packages/server/dist/codewarp-server-*.tar.gz out/
+          cp -v packages/server/pterodactyl/egg-codewarp-collab.json out/
           ls -la out
 
       - uses: actions/upload-artifact@v4

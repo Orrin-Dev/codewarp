@@ -1,3 +1,4 @@
+import { logDiag } from './diagnostics';
 import { MAX_SNAPSHOT_CHUNKS, SNAPSHOT_CHUNK_BYTES } from '@codewarp/core';
 import type { ClientMessage, MonitorState, Op, Peer, ServerMessage } from '@codewarp/core';
 import type { VmHost } from './vmHost';
@@ -18,7 +19,10 @@ export interface CollabEvents {
 
 interface RemoteCursor {
   el: HTMLElement;
+  /** Which sprite's workspace the mouse is over (the last one, if it is somewhere else in the app now). */
   target: string;
+  /** 'workspace': over the blocks, x and y are workspace units. 'window': anywhere else, x and y are fractions of the window. */
+  kind: 'workspace' | 'window';
   /** Where the other person's mouse is, in workspace coordinates. */
   x: number;
   y: number;
@@ -94,9 +98,17 @@ export class Collab {
 
   private readonly cursors = new Map<string, RemoteCursor>();
   private readonly cursorLayer = document.createElement('div');
+  /** Cursors that are not over the blocks are drawn here, on top of the whole app. */
+  private readonly windowLayer = document.createElement('div');
   private cursorFrame = 0;
   private lastCursorSent = 0;
+  private cursorHidden = false;
+  private stopPresence: (() => void) | null = null;
   private readonly pointerHandler = (e: PointerEvent) => this.sendCursor(e);
+  private readonly leaveHandler = () => this.hideMyCursor();
+  private readonly mouseOutHandler = (e: MouseEvent) => {
+    if (!e.relatedTarget) this.hideMyCursor(); // the mouse left the app window
+  };
 
   constructor(
     private readonly vmHost: VmHost,
@@ -106,6 +118,8 @@ export class Collab {
   ) {
     this.cursorLayer.className = 'cw-cursors';
     editor.element.appendChild(this.cursorLayer);
+    this.windowLayer.className = 'cw-cursors cw-cursors-window';
+    document.body.appendChild(this.windowLayer);
 
     this.stateSync = new StateSync(vmHost, (op) => this.enqueue(op));
     this.stateSync.onActivity = () => this.touch();
@@ -190,6 +204,7 @@ export class Collab {
       ws.addEventListener('close', () => {
         if (this.ws !== ws) return;
         if (!settled) return fail('The server closed the connection');
+        logDiag('net', 'connection lost at seq', this.lastSeq);
         this.connectionLost();
       });
       ws.addEventListener('message', (e) => {
@@ -281,6 +296,7 @@ export class Collab {
     this.strikes.clear();
     for (const cursor of this.cursors.values()) cursor.el.remove();
     this.cursors.clear();
+    this.editor.clearAllRemote();
     this.lastSeq = 0;
   }
 
@@ -292,7 +308,11 @@ export class Collab {
     this.stopEdits?.();
     this.stopEdits = null;
     this.stateSync.stop();
-    this.editor.element.removeEventListener('pointermove', this.pointerHandler);
+    window.removeEventListener('pointermove', this.pointerHandler, true);
+    window.removeEventListener('blur', this.leaveHandler);
+    document.documentElement.removeEventListener('mouseout', this.mouseOutHandler);
+    this.stopPresence?.();
+    this.stopPresence = null;
   }
 
   private setState(state: CollabState): void {
@@ -341,6 +361,7 @@ export class Collab {
         this.peers.delete(msg.id);
         this.cursors.get(msg.id)?.el.remove();
         this.cursors.delete(msg.id);
+        this.editor.clearRemote(msg.id);
         if (peer) this.events.onMessage(`${peer.name} left`);
         this.events.onChange();
         break;
@@ -365,6 +386,16 @@ export class Collab {
       case 'cursor':
         this.showCursor(msg.from, msg.target, msg.x, msg.y);
         break;
+      case 'select': {
+        const peer = this.peers.get(msg.from);
+        if (peer && this.state === 'live') this.editor.showRemoteSelect(peer.id, peer.color, msg.target, msg.block);
+        break;
+      }
+      case 'drag': {
+        const peer = this.peers.get(msg.from);
+        if (peer && this.state === 'live') this.editor.showRemoteDrag(peer.id, peer.color, msg.target, msg.block, msg.dx, msg.dy);
+        break;
+      }
       case 'pong':
         break;
       case 'snapshot-request':
@@ -384,7 +415,10 @@ export class Collab {
         break;
       case 'repair':
         if (this.state === 'live') {
-          void this.stateSync.repair(msg.sprites, msg.monitors).then(() => this.events.onMessage('Fixed something that was out of step'));
+          void this.stateSync.repair(msg.sprites, msg.monitors).then(() => {
+            logDiag('sync', 'repaired', msg.sprites?.length ?? 0, 'sprites');
+            this.events.onMessage('Fixed something that was out of step');
+          });
         }
         break;
       case 'run':
@@ -528,7 +562,13 @@ export class Collab {
     this.touch();
     this.stateSync.start();
     this.stopEdits = this.editor.onLocalEdit((edit) => this.localEdit(edit));
-    this.editor.element.addEventListener('pointermove', this.pointerHandler);
+    // The mouse is shown wherever it is in the app, and hidden when it leaves or the app loses focus.
+    window.addEventListener('pointermove', this.pointerHandler, true);
+    window.addEventListener('blur', this.leaveHandler);
+    document.documentElement.addEventListener('mouseout', this.mouseOutHandler);
+    this.stopPresence = this.editor.onPresence((presence) => this.send(presence.kind === 'select'
+      ? { t: 'select', target: presence.target, block: presence.block }
+      : { t: 'drag', target: presence.target, block: presence.block, dx: presence.dx, dy: presence.dy }));
     this.startCursorLoop();
     if (this.runnerId && !this.isRunner) this.beginViewing();
     if (this.reconnectAttempts === 0 && this.lostAt) {
@@ -595,7 +635,7 @@ export class Collab {
     for (const key of problems) this.strikes.set(key, (this.strikes.get(key) ?? 0) + 1);
     const act = problems.filter((key) => (this.strikes.get(key) ?? 0) >= STRIKES_BEFORE_REPAIR);
     if (act.length === 0) return;
-    console.warn('Out of step with the host:', act, comparison);
+    logDiag('sync', 'out of step at seq', this.lastSeq, 'items:', act.join(','), 'differing:', comparison.differing.join(','), 'structure:', comparison.structureDiffers);
     for (const key of act) this.strikes.delete(key);
 
     const now = Date.now();
@@ -731,14 +771,30 @@ export class Collab {
   // ---- cursors -----------------------------------------------------------------------------
 
   private sendCursor(e: PointerEvent): void {
+    this.cursorHidden = false;
+    if (!document.hasFocus()) return;
     const now = performance.now();
     if (now - this.lastCursorSent < 40) return;
-    const target = this.vm.editingTarget;
-    if (!target) return;
-    const point = this.editor.clientToWorkspace(e.clientX, e.clientY);
-    if (!point) return;
     this.lastCursorSent = now;
-    this.send({ t: 'cursor', target: target.getName(), x: point.x, y: point.y });
+    // Over the blocks: send the spot in the workspace, so it stays on the same block however the others scroll.
+    const editor = this.editor.element;
+    const overBlocks = editor.offsetParent !== null && e.target instanceof Node && editor.contains(e.target);
+    const target = this.vm.editingTarget;
+    if (overBlocks && target) {
+      const point = this.editor.clientToWorkspace(e.clientX, e.clientY);
+      if (point) {
+        this.send({ t: 'cursor', target: target.getName(), x: point.x, y: point.y });
+        return;
+      }
+    }
+    // Anywhere else: send where it is as a fraction of the window.
+    this.send({ t: 'cursor', target: '@window', x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight });
+  }
+
+  private hideMyCursor(): void {
+    if (this.cursorHidden || this.state !== 'live') return;
+    this.cursorHidden = true;
+    this.send({ t: 'cursor', target: '@hide', x: 0, y: 0 });
   }
 
   private showCursor(from: string, target: string, x: number, y: number): void {
@@ -755,15 +811,29 @@ export class Collab {
       label.className = 'cw-cursor-label';
       label.textContent = peer.name;
       el.append(arrow, label);
-      this.cursorLayer.appendChild(el);
-      cursor = { el, target, x, y, dx: x, dy: y, seen: 0 };
+      this.windowLayer.appendChild(el);
+      cursor = { el, target: '', kind: 'window', x, y, dx: x, dy: y, seen: 0 };
       this.cursors.set(from, cursor);
     }
-    if (cursor.target !== target) {
-      cursor.dx = x; // jumped to another sprite: don't glide across the screen
-      cursor.dy = y;
+    if (target === '@hide') {
+      cursor.seen = 0; // hidden until it moves again
+      return;
     }
-    Object.assign(cursor, { target, x, y, seen: performance.now() });
+    const kind = target === '@window' ? 'window' : 'workspace';
+    if (kind === 'workspace') {
+      if (cursor.target !== target) {
+        cursor.dx = x; // jumped to another sprite: don't glide across the screen
+        cursor.dy = y;
+      }
+      cursor.target = target;
+    }
+    if (cursor.kind !== kind) {
+      cursor.kind = kind;
+      cursor.dx = x; // changed between the blocks and the rest of the app: jump, don't glide
+      cursor.dy = y;
+      (kind === 'window' ? this.windowLayer : this.cursorLayer).appendChild(cursor.el);
+    }
+    Object.assign(cursor, { x, y, seen: performance.now() });
   }
 
   private startCursorLoop(): void {
@@ -774,7 +844,13 @@ export class Collab {
       for (const cursor of this.cursors.values()) {
         cursor.dx += (cursor.x - cursor.dx) * CURSOR_GLIDE;
         cursor.dy += (cursor.y - cursor.dy) * CURSOR_GLIDE;
-        const visible = cursor.target === editing && now - cursor.seen < CURSOR_TIMEOUT_MS;
+        const fresh = now - cursor.seen < CURSOR_TIMEOUT_MS;
+        if (cursor.kind === 'window') {
+          cursor.el.hidden = !fresh;
+          if (fresh) cursor.el.style.transform = `translate(${cursor.dx * window.innerWidth}px, ${cursor.dy * window.innerHeight}px)`;
+          continue;
+        }
+        const visible = fresh && cursor.target === editing && this.editor.element.offsetParent !== null;
         const position = visible ? this.editor.workspaceToHost(cursor.dx, cursor.dy) : null;
         cursor.el.hidden = !position;
         if (position) cursor.el.style.transform = `translate(${position.x}px, ${position.y}px)`;
@@ -790,7 +866,7 @@ export class Collab {
       peer,
       host: peer.id === this.hostId,
       running: peer.id === this.runnerId,
-      viewing: this.cursors.get(peer.id)?.target ?? null,
+      viewing: this.cursors.get(peer.id)?.target || null,
     }));
   }
 }

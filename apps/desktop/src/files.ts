@@ -4,8 +4,15 @@ export function pickFile(accept: string): Promise<File | null> {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = accept;
-    input.addEventListener('change', () => resolve(input.files?.[0] ?? null));
-    input.addEventListener('cancel', () => resolve(null));
+    input.style.display = 'none';
+    // Attached to the page: some Electron versions ignore click() on a detached input.
+    document.body.appendChild(input);
+    const done = (file: File | null): void => {
+      input.remove();
+      resolve(file);
+    };
+    input.addEventListener('change', () => done(input.files?.[0] ?? null));
+    input.addEventListener('cancel', () => done(null));
     input.click();
   });
 }
