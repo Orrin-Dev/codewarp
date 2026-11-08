@@ -159,7 +159,7 @@ To make your server the default in your own builds, change `COLLAB_SERVER_URL` i
 **Easiest: the egg.** Every release includes `egg-codewarp-collab.json`.
 
 1. In the admin area go to Nests, pick a nest (or create one), choose Import Egg and upload the file.
-2. Create a server from the egg and give it a port allocation. The `RELEASE` variable is `latest` by default; set a tag such as `v0.1.0` to pin a version. Reinstall the server to update it.
+2. Create a server from the egg and give it a port allocation. The `RELEASE` variable is `latest` (newest stable release) by default; set it to `dev` for the newest dev build, or a tag such as `v0.1.0` to pin a version. Reinstall the server to update it.
 3. Start it. The console says "listening on". Then proxy your domain to the allocated port as in step 3 above (containers are usually reached on the Docker gateway address, for example `172.18.0.1:PORT`, rather than `127.0.0.1`).
 
 **Without the egg:** use a generic Node.js egg (Node 22 image). Upload `server.ts`, `rtc.ts`, `index.js` and `package.json` from the archive, set *Main file* to `index.js` and *Additional Node packages* to `ws`. To update, upload the newer `server.ts` and `rtc.ts` over the old ones and restart.

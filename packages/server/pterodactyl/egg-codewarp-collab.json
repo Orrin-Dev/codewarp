@@ -4,7 +4,7 @@
     "version": "PTDL_v2",
     "update_url": null
   },
-  "exported_at": "2026-11-08T01:47:18.252Z",
+  "exported_at": "2026-11-08T07:10:47.088Z",
   "name": "Codewarp Collab Server",
   "author": "voiddev3d@gmail.com",
   "description": "Real-time collaboration relay for the Codewarp Scratch editor.",
@@ -13,7 +13,7 @@
     "Node.js 22": "ghcr.io/parkervcp/yolks:nodejs_22"
   },
   "file_denylist": [],
-  "startup": "node index.js",
+  "startup": "npm install && node index.js",
   "config": {
     "files": "{}",
     "startup": "{\"done\": \"listening on\"}",
@@ -22,7 +22,7 @@
   },
   "scripts": {
     "installation": {
-      "script": "#!/bin/bash\n# Codewarp collaboration server installer\napt-get update -y && apt-get install -y curl tar ca-certificates\nmkdir -p /mnt/server\ncd /mnt/server\n\nif [ \"${RELEASE}\" = \"latest\" ] || [ -z \"${RELEASE}\" ]; then\n  URL=$(curl -fsSL https://api.github.com/repos/Orrin-Dev/codewarp/releases/latest | grep browser_download_url | grep 'codewarp-server-.*\\.tar\\.gz' | head -n 1 | cut -d '\"' -f 4)\nelse\n  URL=\"https://github.com/Orrin-Dev/codewarp/releases/download/${RELEASE}/codewarp-server-${RELEASE#v}.tar.gz\"\nfi\n\nif [ -z \"${URL}\" ]; then\n  echo \"Could not find a codewarp-server archive. Set RELEASE to a tag such as v0.1.0.\"\n  exit 1\nfi\n\necho \"Downloading ${URL}\"\ncurl -fsSL -o server.tar.gz \"${URL}\"\ntar -xzf server.tar.gz --strip-components=1\nrm -f server.tar.gz\nls -la\necho \"Install complete.\"\n",
+      "script": "#!/bin/bash\n# Codewarp collaboration server installer\napt-get update -y && apt-get install -y curl tar ca-certificates\nmkdir -p /mnt/server\ncd /mnt/server\n\n# RELEASE = latest : newest stable release (falls back to dev if there is no stable release yet)\n# RELEASE = dev    : the newest dev build (the rolling \"dev\" pre-release)\n# RELEASE = v1.2.3 : that exact tag\nREPO=\"https://api.github.com/repos/Orrin-Dev/codewarp/releases\"\nfind_url() { curl -fsSL \"$1\" 2>/dev/null | grep browser_download_url | grep 'codewarp-server-.*\\.tar\\.gz' | head -n 1 | cut -d '\"' -f 4; }\ncase \"${RELEASE}\" in\n  \"\"|latest)\n    URL=$(find_url \"${REPO}/latest\")\n    if [ -z \"${URL}\" ]; then echo \"No stable release yet, using dev.\"; URL=$(find_url \"${REPO}/tags/dev\"); fi\n    ;;\n  *)\n    URL=$(find_url \"${REPO}/tags/${RELEASE}\")\n    ;;\nesac\n\nif [ -z \"${URL}\" ]; then\n  echo \"Could not find a codewarp-server archive. Set RELEASE to a tag such as v0.1.0 or dev.\"\n  exit 1\nfi\n\necho \"Downloading ${URL}\"\ncurl -fsSL -o server.tar.gz \"${URL}\"\ntar -xzf server.tar.gz --strip-components=1\nrm -f server.tar.gz\nls -la\necho \"Install complete.\"\n",
       "container": "ghcr.io/parkervcp/installers:debian",
       "entrypoint": "bash"
     }
@@ -30,7 +30,7 @@
   "variables": [
     {
       "name": "Release",
-      "description": "The release tag to install (for example v0.1.0), or \"latest\". Reinstall the server to update.",
+      "description": "latest = newest stable release, dev = newest dev build, or a tag such as v0.1.0. Reinstall the server to update.",
       "env_variable": "RELEASE",
       "default_value": "latest",
       "user_viewable": true,
