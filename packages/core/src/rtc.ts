@@ -93,7 +93,13 @@ export type Op =
 // ---- client -> server -------------------------------------------------------
 
 export type ClientMessage =
-  | { t: 'join'; room: string; name: string }
+  /**
+   * `password` locks the room when this message creates it, and is required to join a locked room.
+   * `unlisted` keeps a room you create out of the lobby list. Both are ignored for an existing room's settings.
+   */
+  | { t: 'join'; room: string; name: string; password?: string; unlisted?: boolean }
+  /** Ask for the list of open rooms (allowed before joining). */
+  | { t: 'list' }
   | { t: 'ops'; ops: Op[] }
   /**
    * Where the mouse is. `target` is a sprite name (x, y in workspace units), '@window' (x, y are fractions
@@ -141,7 +147,20 @@ export type ServerMessage =
   | { t: 'repair'; seq: number; sprites: { name: string; data: string }[]; monitors?: MonitorState[] }
   /** `from` started or stopped a live test run. */
   | { t: 'run'; from: string; running: boolean }
-  | { t: 'error'; message: string };
+  | { t: 'rooms'; rooms: RoomInfo[] }
+  /** `code` lets the app react: ask for a password, say the room is full, and so on. */
+  | { t: 'error'; message: string; code?: ErrorCode };
+
+export type ErrorCode = 'password-required' | 'wrong-password' | 'room-full' | 'server-full' | 'bad-room';
+
+/** One row of the lobby list. */
+export interface RoomInfo {
+  name: string;
+  people: number;
+  max: number;
+  /** Needs a password to join. */
+  locked: boolean;
+}
 
 // ---- live run video ---------------------------------------------------------
 
@@ -159,6 +178,8 @@ export const SNAPSHOT_CHUNK_BYTES = 192 * 1024;
 export const MAX_SNAPSHOT_CHUNKS = 3000;
 export const MAX_NAME_LENGTH = 32;
 export const MAX_ROOM_LENGTH = 64;
+export const MAX_PASSWORD_LENGTH = 64;
+export const MAX_LISTED_ROOMS = 100;
 export const MAX_PEERS_PER_ROOM = 12;
 export const DEFAULT_PORT = 8787;
 
@@ -169,6 +190,11 @@ export function cleanName(name: string): string {
 
 export function cleanRoom(room: string): string {
   return room.trim().slice(0, MAX_ROOM_LENGTH);
+}
+
+/** Room names ignore capital letters and spaces at the ends: "Team" and "team " are the same room. */
+export function roomKey(room: string): string {
+  return cleanRoom(room).toLowerCase();
 }
 
 /** A stable, readable color for a peer id. */

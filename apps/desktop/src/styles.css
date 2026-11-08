@@ -168,10 +168,12 @@ button.active { background: var(--accent); border-color: var(--accent); color: #
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 .cw-modal h2 { margin: 0; font-size: 16px; }
 .cw-modal p { margin: 0; color: var(--muted); }
-.cw-modal input[type='text'] {
+.cw-modal input[type='text'], .cw-modal input[type='password'] {
   padding: 8px;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -550,3 +552,10 @@ body.cw-scratch-sprites .sprite-props input[type='text'], body.cw-scratch-sprite
 .cw-backpack.cw-drop-ready { outline: 2px dashed var(--accent); outline-offset: -2px; min-height: 36px; }
 .cw-backpack.cw-drop-over { background: var(--accent); }
 .cw-backpack.cw-drop-over .cw-backpack-title { color: #fff; }
+
+/* ---- Lobby list ---- */
+.cw-lobby-head { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+.cw-lobby { display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; overscroll-behavior: contain; }
+.cw-lobby-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; }
+.cw-lobby-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cw-lobby-count { color: var(--muted); font-size: 12px; }

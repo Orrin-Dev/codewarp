@@ -1,6 +1,6 @@
 import { logDiag } from './diagnostics';
 import { MAX_SNAPSHOT_CHUNKS, SNAPSHOT_CHUNK_BYTES } from '@codewarp/core';
-import type { ClientMessage, MonitorState, Op, Peer, ServerMessage } from '@codewarp/core';
+import type { ClientMessage, MonitorState, Op, Peer, RoomInfo, ServerMessage } from '@codewarp/core';
 import type { VmHost } from './vmHost';
 import type { BlocksEditor, LocalEdit } from './blocksEditor';
 import { StateSync, fromBase64, toBase64 } from './stateSync';
@@ -74,7 +74,7 @@ export class Collab {
   private readonly liveRun: LiveRun;
 
   private ws: WebSocket | null = null;
-  private session: { room: string; name: string } | null = null;
+  private session: { room: string; name: string; password?: string; unlisted?: boolean } | null = null;
   private manualClose = false;
   private reconnectTimer: number | undefined;
   private reconnectAttempts = 0;
@@ -166,9 +166,9 @@ export class Collab {
 
   // ---- connecting -------------------------------------------------------------
 
-  connect(room: string, name: string): Promise<void> {
+  connect(room: string, name: string, options: { password?: string; unlisted?: boolean } = {}): Promise<void> {
     this.disconnect();
-    this.session = { room, name };
+    this.session = { room, name, password: options.password || undefined, unlisted: options.unlisted };
     this.manualClose = false;
     this.setState('connecting');
     return this.open(true);
@@ -189,17 +189,20 @@ export class Collab {
       ws.binaryType = 'arraybuffer';
       this.ws = ws;
 
-      const fail = (message: string) => {
+      const fail = (message: string, code?: string) => {
         if (settled) return;
         settled = true;
         if (this.ws === ws) this.ws = null;
         ws.close();
         if (initial) this.setState('offline');
-        reject(new Error(message));
+        reject(Object.assign(new Error(message), { code }));
       };
 
       ws.addEventListener('open', () => {
-        if (this.session) this.send({ t: 'join', room: this.session.room, name: this.session.name });
+        if (this.session) {
+          const { room, name, password, unlisted } = this.session;
+          this.send({ t: 'join', room, name, password, unlisted });
+        }
       });
       ws.addEventListener('error', () => {
         const hint = url.includes('collab.example.com') ? ' (set your server address in packages/core/src/config.ts)' : '';
@@ -223,7 +226,7 @@ export class Collab {
         } catch {
           return;
         }
-        if (msg.t === 'error' && !settled) return fail(msg.message);
+        if (msg.t === 'error' && !settled) return fail(msg.message, msg.code);
         if (msg.t === 'welcome' && !settled) {
           settled = true;
           resolve();
@@ -273,7 +276,7 @@ export class Collab {
       if (this.manualClose || this.state !== 'reconnecting') return;
       this.open(false).catch((error) => {
         // A refusal (room full) is final; a network problem is worth another try.
-        if (this.state === 'reconnecting' && /full|room/i.test(String(error?.message))) {
+        if (this.state === 'reconnecting' && /full|room|password/i.test(String(error?.message))) {
           this.events.onMessage(String(error.message));
           this.disconnect();
         } else if (this.state === 'reconnecting') {
@@ -431,6 +434,8 @@ export class Collab {
       case 'error':
         this.events.onMessage(msg.message);
         break;
+      case 'rooms':
+        break; // only used by the lobby list
     }
   }
 
@@ -945,4 +950,39 @@ export class Collab {
       viewing: this.cursors.get(peer.id)?.target || null,
     }));
   }
+}
+
+
+/** Ask the server which rooms are open (the lobby list). Rejects if it cannot be reached. */
+export function fetchRooms(url: string): Promise<RoomInfo[]> {
+  return new Promise((resolve, reject) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url);
+    } catch {
+      reject(new Error('The server address is not valid'));
+      return;
+    }
+    let done = false;
+    const finish = (error: Error | null, rooms: RoomInfo[] = []) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      ws.close();
+      if (error) reject(error);
+      else resolve(rooms);
+    };
+    const timer = window.setTimeout(() => finish(new Error('The server did not answer')), 6000);
+    ws.addEventListener('open', () => ws.send(JSON.stringify({ t: 'list' })));
+    ws.addEventListener('error', () => finish(new Error('Could not reach the collaboration server')));
+    ws.addEventListener('close', () => finish(new Error('The server closed the connection')));
+    ws.addEventListener('message', (e) => {
+      try {
+        const msg = JSON.parse(String(e.data));
+        if (msg.t === 'rooms' && Array.isArray(msg.rooms)) finish(null, msg.rooms);
+      } catch {
+        /* ignore */
+      }
+    });
+  });
 }

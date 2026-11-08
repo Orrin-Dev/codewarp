@@ -13,6 +13,9 @@ import {
   getScratchSprites,
   getAutoUpdate,
   saveAutoUpdate,
+  getUpdateChannel,
+  saveUpdateChannel,
+  type UpdateChannel,
   saveScratchSprites,
   currentTheme,
   isValidServerUrl,
@@ -209,6 +212,29 @@ export class SettingsPanel {
       version.textContent = `Version ${v} (${dev ? 'dev build: updates come from the dev release' : 'production: updates come from the latest numbered release'})`;
     });
 
+    // Which branch to update from. Defaults to the one this copy was downloaded from.
+    const channelRow = element('label', 'cw-check-row');
+    const select = element('select');
+    for (const [value, text] of [
+      ['production', 'Production (numbered releases)'],
+      ['dev', 'Dev (newest build, may be unstable)'],
+    ] as const) {
+      const option = element('option', '', text);
+      option.value = value;
+      select.appendChild(option);
+    }
+    void bridge.getVersion().then((v) => {
+      select.value = getUpdateChannel() ?? (/-dev\./.test(v) ? 'dev' : 'production');
+    });
+    const channelStatus = element('p', 'cw-settings-message');
+    select.addEventListener('change', () => {
+      saveUpdateChannel(select.value as UpdateChannel);
+      channelStatus.textContent = 'Checking the new branch…';
+      void bridge.checkForUpdates().then((message) => (channelStatus.textContent = message));
+    });
+    channelRow.append(element('span', '', 'Update from:'), select);
+    section.append(channelRow, channelStatus);
+
     const label = element('label', 'cw-check-row');
     const check = element('input');
     check.type = 'checkbox';
@@ -234,7 +260,11 @@ export class SettingsPanel {
   private buildDiagnostics(diag: { text(): string; clear(): void }): HTMLElement {
     const section = element('section', 'cw-settings-section');
     section.append(element('h2', '', 'Diagnostics'));
-    section.append(element('p', 'cw-settings-hint', 'Errors and sync problems are recorded here. If something breaks, copy this and send it to me.'));
+    section.append(element(
+        'p',
+        'cw-settings-hint',
+        'If you have an issue, make a GitHub issue (github.com/Orrin-Dev/codewarp/issues) and copy this text into it.',
+      ));
     const box = element('textarea', 'cw-diag');
     box.readOnly = true;
     box.rows = 8;
@@ -247,7 +277,22 @@ export class SettingsPanel {
     const clear = element('button', '', 'Clear');
     for (const b of [reload, copy, clear]) b.type = 'button';
     reload.addEventListener('click', refresh);
-    copy.addEventListener('click', () => void navigator.clipboard?.writeText(diag.text()));
+    copy.addEventListener('click', () => {
+      void (async () => {
+        const version = await window.codewarp?.getVersion().catch(() => '?');
+        const header = [`Codewarp ${version ?? '(browser)'}`, navigator.userAgent, `Recorded ${new Date().toISOString()}`, ''].join('\n');
+        const text = header + (diag.text() || '(nothing recorded)');
+        try {
+          await navigator.clipboard.writeText(text);
+          copy.textContent = 'Copied!';
+        } catch {
+          box.value = text; // clipboard blocked: show it so it can be selected and copied by hand
+          box.select();
+          copy.textContent = 'Select and copy';
+        }
+        window.setTimeout(() => (copy.textContent = 'Copy'), 1800);
+      })();
+    });
     clear.addEventListener('click', () => {
       diag.clear();
       refresh();

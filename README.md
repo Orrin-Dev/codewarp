@@ -48,6 +48,7 @@ Open the **Settings** tab (top right of the editor) to:
 
 - **Change the colours.** Pick a preset or set the accent, background, panel and text colours yourself.
 - **Change the collaboration server.** The project server is the default. Enter another `ws://` or `wss://` address and press Save, use **Test connection** to check it, or press **Use default server** to go back. The change applies the next time you join a room.
+- **Rooms.** Room names ignore capitals. The join window lists open rooms with a Join button. When you create a room you can give it a password (joiners get a popup asking for it) and hide it from the list.
 - **Updates.** Check for updates now, or turn off automatic checks.
 - **Frame rate.** Projects run at 60 fps by default; set 10 to 250 fps.
 - **Scratch-style sprite area.** A lighter, Scratch-like sprite panel.
@@ -57,7 +58,7 @@ The **backpack** (bottom of the Code tab) keeps scripts, costumes and sounds bet
 
 ### Updates
 
-Installed copies update themselves (AppImage, `.deb`, `.rpm` and the Windows installer; the portable `.exe` does not). A **dev** build follows the rolling `dev` release and a **production** build follows the latest numbered release, so what you download decides which one you stay on. The app checks a few seconds after it starts and every four hours, downloads the new version in the background and installs it when you close the app (or when you press Restart now). Packages need `pkexec` (polkit) to install, which every desktop Linux has.
+Installed copies update themselves (AppImage, `.deb`, `.rpm` and the Windows installer; the portable `.exe` does not). A **dev** build follows the rolling `dev` release and a **production** build follows the latest numbered release, so what you download decides which one you start on. You can switch in **Settings > Updates > Update from**; the app then installs the newest build from that branch (this can mean going to a lower version number). The app checks a few seconds after it starts and every four hours, downloads the new version in the background and installs it when you close the app (or when you press Restart now). Packages need `pkexec` (polkit) to install, which every desktop Linux has.
 
 ## Contributing
 

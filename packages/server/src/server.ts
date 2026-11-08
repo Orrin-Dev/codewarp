@@ -1,15 +1,17 @@
 import { createServer } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 // Node runs this file directly (types are stripped). In the monorepo the shared protocol is imported from core; the export script rewrites the path.
-import type { ClientMessage, Peer, ServerMessage } from '../../core/src/rtc.ts';
-import { MAX_PEERS_PER_ROOM, MAX_SNAPSHOT_CHUNKS, FRAME_JPEG, cleanName, cleanRoom, colorFor, DEFAULT_PORT } from '../../core/src/rtc.ts';
+import type { ClientMessage, ErrorCode, Peer, RoomInfo, ServerMessage } from '../../core/src/rtc.ts';
+import { MAX_PEERS_PER_ROOM, MAX_SNAPSHOT_CHUNKS, MAX_PASSWORD_LENGTH, MAX_LISTED_ROOMS, FRAME_JPEG, cleanName, cleanRoom, roomKey, colorFor, DEFAULT_PORT } from '../../core/src/rtc.ts';
 
 /*
  * Codewarp collaboration relay.
  *  - People join a room by name. The first one in is the host.
  *  - Edits are numbered per room and relayed to everyone else, so all clients see one order.
  *  - A newcomer asks the host for a snapshot of the project; the server just forwards it.
+ *  - Room names ignore capitals. A room can have a password (stored only as a salted hash) and can be unlisted.
+ *  - A `list` request returns the open rooms for the lobby.
  *  - Cursors are relayed and never stored.
  *  - One person at a time can share a live test run; their video frames are relayed to everyone else.
  *  - The host's project fingerprints and sprite repairs are relayed so everyone can stay in step.
@@ -32,7 +34,13 @@ interface Member extends Peer {
 }
 
 interface Room {
+  /** The name as the first person typed it; the map key is the lower case version. */
   name: string;
+  key: string;
+  /** Null for an open room. The password itself is never stored, only a salted hash. */
+  password: { salt: Buffer; hash: Buffer } | null;
+  /** Kept out of the lobby list. */
+  unlisted: boolean;
   seq: number;
   members: Map<string, Member>;
   hostId: string;
@@ -41,6 +49,23 @@ interface Room {
 }
 
 const rooms = new Map<string, Room>();
+
+const hashPassword = (password: string, salt: Buffer): Buffer => scryptSync(password, salt, 32);
+
+function passwordMatches(room: Room, attempt: string): boolean {
+  if (!room.password) return true;
+  const hash = hashPassword(attempt.slice(0, MAX_PASSWORD_LENGTH), room.password.salt);
+  return timingSafeEqual(hash, room.password.hash);
+}
+
+function lobby(): RoomInfo[] {
+  const list: RoomInfo[] = [];
+  for (const room of rooms.values()) {
+    if (room.unlisted || room.members.size === 0) continue;
+    list.push({ name: room.name, people: room.members.size, max: MAX_PEERS_PER_ROOM, locked: room.password !== null });
+  }
+  return list.sort((a, b) => b.people - a.people || a.name.localeCompare(b.name)).slice(0, MAX_LISTED_ROOMS);
+}
 
 const httpServer = createServer((req, res) => {
   if (req.url === '/health') {
@@ -88,7 +113,7 @@ function leave(room: Room | undefined, member: Member | undefined): void {
   if (!room || !member) return;
   room.members.delete(member.id);
   if (room.members.size === 0) {
-    rooms.delete(room.name);
+    rooms.delete(room.key);
     return;
   }
   broadcast(room, { t: 'peer-leave', id: member.id });
@@ -108,6 +133,9 @@ function leave(room: Room | undefined, member: Member | undefined): void {
 wss.on('connection', (ws) => {
   let room: Room | undefined;
   let me: Member | undefined;
+  let wrongPasswords = 0;
+  let beforeJoin = 0; // messages sent before joining, capped below
+  const refuse = (message: string, code?: ErrorCode): void => send(ws, { t: 'error', message, code });
 
   ws.on('pong', () => {
     if (me) me.alive = true;
@@ -143,24 +171,52 @@ wss.on('connection', (ws) => {
       }
     }
 
+    if (!me && ++beforeJoin > 40) {
+      ws.close(1008, 'Too many messages');
+      return;
+    }
+
+    if (msg.t === 'list') {
+      if (!me) send(ws, { t: 'rooms', rooms: lobby() });
+      return;
+    }
+
     if (msg.t === 'join') {
       if (me) return; // already in a room
       const roomName = cleanRoom(String(msg.room ?? ''));
-      if (!roomName) {
-        send(ws, { t: 'error', message: 'Enter a room name' });
+      const key = roomKey(roomName);
+      if (!key) {
+        refuse('Enter a room name', 'bad-room');
         return;
       }
-      let target = rooms.get(roomName);
-      if (!target) {
-        if (rooms.size >= MAX_ROOMS) {
-          send(ws, { t: 'error', message: 'The server is full, try again later' });
+      const password = typeof msg.password === 'string' ? msg.password.slice(0, MAX_PASSWORD_LENGTH) : '';
+      let target = rooms.get(key);
+      if (target?.password) {
+        if (!password) {
+          refuse('This room is locked. Enter its password.', 'password-required');
           return;
         }
-        target = { name: roomName, seq: 0, members: new Map(), hostId: '', runnerId: '' };
-        rooms.set(roomName, target);
+        if (!passwordMatches(target, password)) {
+          if (++wrongPasswords >= 5) ws.close(1008, 'Too many wrong passwords');
+          else refuse('That password is not right.', 'wrong-password');
+          return;
+        }
+      }
+      if (!target) {
+        if (rooms.size >= MAX_ROOMS) {
+          refuse('The server is full, try again later', 'server-full');
+          return;
+        }
+        let secret: Room['password'] = null;
+        if (password) {
+          const salt = randomBytes(16);
+          secret = { salt, hash: hashPassword(password, salt) };
+        }
+        target = { name: roomName, key, password: secret, unlisted: msg.unlisted === true, seq: 0, members: new Map(), hostId: '', runnerId: '' };
+        rooms.set(key, target);
       }
       if (target.members.size >= MAX_PEERS_PER_ROOM) {
-        send(ws, { t: 'error', message: `That room is full (${MAX_PEERS_PER_ROOM} people)` });
+        refuse(`That room is full (${MAX_PEERS_PER_ROOM} people)`, 'room-full');
         return;
       }
       const id = randomUUID();

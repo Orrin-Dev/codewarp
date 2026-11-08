@@ -98,7 +98,8 @@
       "provider": "generic",
       "url": "https://github.com/Orrin-Dev/codewarp/releases/latest/download",
       "channel": "latest"
-    }
+    },
+    "icon": "build/icon.png"
   },
   "homepage": "https://github.com/Orrin-Dev/codewarp",
   "license": "MIT"
