@@ -10,6 +10,11 @@ declare module 'scratch-blocks';
 interface CodewarpBridge {
   openProject(): Promise<{ name: string; data: Uint8Array } | null>;
   saveProject(suggestedName: string, data: Uint8Array): Promise<string | null>;
+  getVersion(): Promise<string>;
+  /** Ask for updates now. Resolves with a short message for the person. */
+  checkForUpdates(): Promise<string>;
+  setAutoUpdate(enabled: boolean): void;
+  onUpdateStatus(listener: (message: string) => void): void;
 }
 
 interface Window {

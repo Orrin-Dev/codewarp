@@ -11,6 +11,8 @@ import {
   getFramerate,
   saveFramerate,
   getScratchSprites,
+  getAutoUpdate,
+  saveAutoUpdate,
   saveScratchSprites,
   currentTheme,
   isValidServerUrl,
@@ -47,7 +49,7 @@ export class SettingsPanel {
   ) {
     root.classList.add('cw-settings');
     const page = element('div', 'cw-settings-page');
-    page.append(this.buildAppearance(), this.buildProject(), this.buildServer());
+    page.append(this.buildAppearance(), this.buildProject(), this.buildUpdates(), this.buildServer());
     if (this.diagnostics) page.append(this.buildDiagnostics(this.diagnostics));
     root.replaceChildren(page);
   }
@@ -189,6 +191,43 @@ export class SettingsPanel {
     check.addEventListener('change', () => saveScratchSprites(check.checked));
     label.append(check, element('span', '', 'Scratch-style sprite area (blue panel, big sprite tiles)'));
     section.appendChild(label);
+    return section;
+  }
+
+  private buildUpdates(): HTMLElement {
+    const section = element('section', 'cw-settings-section');
+    section.append(element('h2', '', 'Updates'));
+    const bridge = window.codewarp;
+    const version = element('p', 'cw-settings-hint', 'Version: …');
+    section.appendChild(version);
+    if (!bridge) {
+      version.textContent = 'Updates are only available in the desktop app.';
+      return section;
+    }
+    void bridge.getVersion().then((v) => {
+      const dev = /-dev\./.test(v);
+      version.textContent = `Version ${v} (${dev ? 'dev build: updates come from the dev release' : 'production: updates come from the latest numbered release'})`;
+    });
+
+    const label = element('label', 'cw-check-row');
+    const check = element('input');
+    check.type = 'checkbox';
+    check.checked = getAutoUpdate();
+    check.addEventListener('change', () => saveAutoUpdate(check.checked));
+    label.append(check, element('span', '', 'Check for updates automatically and install them when you close Codewarp'));
+    section.appendChild(label);
+
+    const row = element('div', 'cw-settings-buttons');
+    const button = element('button', '', 'Check for updates now');
+    button.type = 'button';
+    const status = element('p', 'cw-settings-message');
+    button.addEventListener('click', () => {
+      status.textContent = 'Checking…';
+      void bridge.checkForUpdates().then((message) => (status.textContent = message));
+    });
+    bridge.onUpdateStatus((message) => (status.textContent = message));
+    row.appendChild(button);
+    section.append(row, status);
     return section;
   }
 

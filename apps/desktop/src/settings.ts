@@ -50,6 +50,7 @@ interface Stored {
   serverUrl?: string;
   fps?: number;
   scratchSprites?: boolean;
+  autoUpdate?: boolean;
 }
 
 const KEY = 'codewarp.settings';
@@ -254,4 +255,15 @@ export function saveScratchSprites(on: boolean): void {
   stored.scratchSprites = on;
   write(stored);
   applyScratchSprites(on);
+}
+
+export function getAutoUpdate(): boolean {
+  return read().autoUpdate !== false; // on unless the person turned it off
+}
+
+export function saveAutoUpdate(on: boolean): void {
+  const stored = read();
+  stored.autoUpdate = on;
+  write(stored);
+  window.codewarp?.setAutoUpdate(on);
 }

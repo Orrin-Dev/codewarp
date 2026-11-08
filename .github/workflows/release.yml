@@ -23,6 +23,7 @@ jobs:
     outputs:
       channel: ${{ steps.version.outputs.channel }}
       version: ${{ steps.version.outputs.version }}
+      update_url: ${{ steps.version.outputs.update_url }}
     steps:
       - uses: actions/checkout@v4
       - name: Work out the version
@@ -32,12 +33,17 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             channel=production
             version="${GITHUB_REF_NAME#v}"
+            # production builds update from the newest numbered release
+            update_url="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download"
           else
             channel=dev
             version="${base%%-*}-dev.${GITHUB_RUN_NUMBER}"
+            # dev builds update from the rolling dev release
+            update_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/dev"
           fi
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "update_url=$update_url" >> "$GITHUB_OUTPUT"
           echo "Building $channel version $version"
 
   linux:
@@ -72,6 +78,7 @@ jobs:
         working-directory: apps/desktop
         env:
           VERSION: ${{ needs.meta.outputs.version }}
+          UPDATE_URL: ${{ needs.meta.outputs.update_url }}
           HUSKY: '0' # electron-builder runs npm install, which would otherwise try to set up git hooks
         run: |
           # In a workspace npm installs electron in the root node_modules, where electron-builder does not
@@ -80,7 +87,8 @@ jobs:
           echo "Packaging with Electron $ELECTRON_VERSION"
           npx electron-builder --linux AppImage deb rpm --publish never \
             --config.electronVersion="$ELECTRON_VERSION" \
-            --config.extraMetadata.version="$VERSION"
+            --config.extraMetadata.version="$VERSION" \
+            --config.publish.url="$UPDATE_URL"
 
       - name: Package the collaboration server
         env:
@@ -91,6 +99,8 @@ jobs:
         run: |
           mkdir -p out
           cp -v apps/desktop/release/*.AppImage apps/desktop/release/*.deb apps/desktop/release/*.rpm out/
+          # the files the app reads to find updates
+          cp -v apps/desktop/release/latest-linux.yml out/ || { echo "latest-linux.yml was not produced, so auto update would not work"; exit 1; }
           cp -v packages/server/dist/codewarp-server-*.tar.gz out/
           cp -v packages/server/pterodactyl/egg-codewarp-collab.json out/
           ls -la out
@@ -119,18 +129,22 @@ jobs:
         working-directory: apps/desktop
         env:
           VERSION: ${{ needs.meta.outputs.version }}
+          UPDATE_URL: ${{ needs.meta.outputs.update_url }}
           HUSKY: '0'
         run: |
           ELECTRON_VERSION=$(node -p "require('electron/package.json').version")
           echo "Packaging with Electron $ELECTRON_VERSION"
           npx electron-builder --win nsis portable --x64 --publish never \
             --config.electronVersion="$ELECTRON_VERSION" \
-            --config.extraMetadata.version="$VERSION"
+            --config.extraMetadata.version="$VERSION" \
+            --config.publish.url="$UPDATE_URL"
 
       - name: Collect files
         run: |
           mkdir -p out
           cp -v apps/desktop/release/*.exe out/
+          cp -v apps/desktop/release/latest.yml out/ || { echo "latest.yml was not produced, so auto update would not work"; exit 1; }
+          cp -v apps/desktop/release/*.blockmap out/ || true
           ls -la out
 
       - uses: actions/upload-artifact@v4

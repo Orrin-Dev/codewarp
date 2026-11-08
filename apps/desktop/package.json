@@ -16,6 +16,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "dist:win": "vite build && electron-builder --win nsis portable --x64"
   },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
   "devDependencies": {
     "@codewarp/core": "*",
     "concurrently": "^9.0.0",
@@ -90,6 +93,11 @@
     },
     "portable": {
       "artifactName": "Codewarp-${version}-${arch}-portable.${ext}"
+    },
+    "publish": {
+      "provider": "generic",
+      "url": "https://github.com/Orrin-Dev/codewarp/releases/latest/download",
+      "channel": "latest"
     }
   },
   "homepage": "https://github.com/Orrin-Dev/codewarp",
