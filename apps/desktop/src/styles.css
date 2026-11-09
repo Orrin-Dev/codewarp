@@ -10,6 +10,27 @@
 
 * { box-sizing: border-box; }
 
+/* Every form control follows the theme (the browser's white defaults looked wrong on dark themes).
+   color-scheme also makes the native dropdown list, scrollbars and number spinners match. */
+:root { color-scheme: dark; }
+:root[data-theme='light'] { color-scheme: light; }
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], .blocklyHtmlInput), select, textarea) {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+}
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], .blocklyHtmlInput), select, textarea):focus {
+  outline: none;
+  border-color: var(--accent);
+}
+select { cursor: pointer; }
+select option { background: var(--panel); color: var(--text); }
+input::placeholder, textarea::placeholder { color: var(--muted); }
+input[type='checkbox'], input[type='radio'], input[type='range'] { accent-color: var(--accent); }
+
 html, body {
   margin: 0;
   height: 100%;
