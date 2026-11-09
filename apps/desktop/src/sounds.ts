@@ -624,10 +624,20 @@ export class SoundsPanel {
   }
 
   private async uploadSound(): Promise<void> {
+    logDiag('sound', 'upload: opening the file dialog');
+    this.setStatus('Choose a sound file…');
     const file = await pickFile('audio/*,.wav,.mp3,.ogg,.m4a,.flac');
-    if (!file) return;
+    if (!file) {
+      logDiag('sound', 'upload: no file chosen');
+      this.setStatus('No file chosen');
+      return;
+    }
+    logDiag('sound', 'upload: chose', file.name, file.size, 'bytes');
+    this.setStatus(`Reading ${file.name}…`);
     const pcm = await this.decode(await file.arrayBuffer());
     await this.addSoundFromPcm(baseName(file.name) || 'sound', pcm);
+    logDiag('sound', 'upload: added', file.name);
+    this.setStatus(`Added ${file.name}`);
   }
 
   private async toggleRecording(): Promise<void> {
@@ -635,6 +645,8 @@ export class SoundsPanel {
       this.recorder.stop();
       return;
     }
+    logDiag('sound', 'record: asking for the microphone');
+    this.setStatus('Asking for the microphone…');
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('Recording is not available here');
     let stream: MediaStream;
     try {
@@ -664,6 +676,8 @@ export class SoundsPanel {
     };
     this.recorder = recorder;
     recorder.start();
+    logDiag('sound', 'record: started');
+    this.setStatus('Recording… press the button again to stop');
     this.recordButton.textContent = '■ Stop recording';
     this.recordButton.classList.add('cw-recording');
   }

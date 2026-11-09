@@ -47,6 +47,9 @@ export class CostumesPanel {
   private loadToken = 0;
   private loadedAssetId = '';
   private lastSaveAt = 0;
+  /** When a collaborator last changed this sprite's pictures. */
+  private remoteAt = 0;
+  private remoteTargetId = '';
 
   constructor(
     root: HTMLElement,
@@ -55,6 +58,10 @@ export class CostumesPanel {
     private readonly toBackpack: (item: any) => Promise<void> = async () => {},
   ) {
     root.classList.add('cw-costumes');
+    window.addEventListener('cw-remote-costumes', (e) => {
+      this.remoteAt = performance.now();
+      this.remoteTargetId = String((e as CustomEvent).detail);
+    });
 
     const side = document.createElement('div');
     side.className = 'cw-asset-side';
@@ -120,7 +127,8 @@ export class CostumesPanel {
     let changedElsewhere = false;
     if (current && String(current.assetId) !== this.loadedAssetId && target.id === this.loadedTargetId) {
       // Our own save changes the asset a moment later; anything else (a collaborator's edit) must reload the canvas.
-      if (performance.now() - this.lastSaveAt < 2500) this.loadedAssetId = String(current.assetId);
+      const remote = this.remoteTargetId === target.id && this.remoteAt >= this.lastSaveAt;
+      if (!remote && performance.now() - this.lastSaveAt < 2500) this.loadedAssetId = String(current.assetId);
       else changedElsewhere = true;
     }
     if (force || changedElsewhere || target.id !== this.loadedTargetId || target.currentCostume !== this.loadedIndex) {

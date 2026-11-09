@@ -555,6 +555,10 @@ export class StateSync {
   private async applyCostumes(target: any, desired: CostumeMeta[], blobs: Map<string, AssetBlob>): Promise<void> {
     const current = target.getCostumes().map((c: any) => costumeKey(this.costumeMeta(c)));
     const steps = planList(current, desired.map(costumeKey));
+    // A repainted costume arrives as "add the new picture, delete the old one". Deleting the one that is
+    // showing would change which costume is selected, so remember it and put it back afterwards.
+    const keepIndex: number = target.currentCostume;
+    const sameCount = current.length === desired.length;
     for (const step of steps) {
       if (step.type === 'add') {
         const meta = desired[step.desiredIndex];
@@ -585,6 +589,12 @@ export class StateSync {
       desired.map((c) => c.name),
       (i, name) => target.renameCostume(i, name),
     );
+    if (sameCount && steps.length > 0 && keepIndex >= 0 && keepIndex < target.getCostumes().length && target.currentCostume !== keepIndex) {
+      target.setCostume(keepIndex);
+    }
+    // Tell the costume editor somebody else changed this sprite's pictures, so it reloads the canvas
+    // instead of guessing from timing whether the change was its own.
+    if (steps.length > 0) window.dispatchEvent(new CustomEvent('cw-remote-costumes', { detail: target.id }));
   }
 
   private async applySounds(target: any, desired: SoundMeta[], blobs: Map<string, AssetBlob>): Promise<void> {
