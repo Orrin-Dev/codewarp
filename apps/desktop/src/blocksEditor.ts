@@ -1,3 +1,4 @@
+import { confirmDialog } from './dialogs';
 import { STAGE_TOOLBOX_XML, TOOLBOX_XML } from './toolbox';
 import { installProjectMenus } from './menus';
 import { showPrompt } from './prompt';
@@ -72,6 +73,10 @@ export class BlocksEditor {
     ScratchBlocks = resolveBlocks();
     // Electron has no window.prompt, so use our own dialog for "Make a Variable" etc.
     ScratchBlocks.prompt = showPrompt;
+    // Same for confirmations (deleting a variable that blocks use): themed, not the system popup.
+    ScratchBlocks.confirm = (message: string, callback: (ok: boolean) => void) => {
+      void confirmDialog({ title: message, confirmText: 'Yes', cancelText: 'No', danger: true }).then(callback);
+    };
     // "Make a Block" and right-click > Edit on custom blocks call this; scratch-blocks has no UI for it.
     ScratchBlocks.Procedures.externalProcedureDefCallback = showMakeBlock;
     // scratch-blocks ships getCheckboxState as a stub that always answers "unchecked" and expects the

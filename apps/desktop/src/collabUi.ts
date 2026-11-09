@@ -1,3 +1,4 @@
+import { confirmDialog } from './dialogs';
 import { MAX_NAME_LENGTH, MAX_PASSWORD_LENGTH, MAX_ROOM_LENGTH, cleanName } from '@codewarp/core';
 import type { RoomInfo } from '@codewarp/core';
 import { collabServerUrl } from './collabConfig';
@@ -344,9 +345,15 @@ export class CollabUi {
     resync.title = 'Replaces your copy with the host\'s current project';
     resync.disabled = this.collab.state !== 'live' || this.collab.isHost;
     resync.addEventListener('click', () => {
-      if (!window.confirm("Replace your project with the host's current copy?")) return;
-      this.collab.resync();
-      close();
+      void confirmDialog({
+        title: "Get the host's project again?",
+        message: "This replaces your copy with the host's current project.",
+        confirmText: 'Replace mine',
+      }).then((ok) => {
+        if (!ok) return;
+        this.collab.resync();
+        close();
+      });
     });
     const done = document.createElement('button');
     done.type = 'button';

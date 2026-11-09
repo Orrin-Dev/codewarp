@@ -1,3 +1,4 @@
+import { confirmDialog } from './dialogs';
 import type { VmHost } from './vmHost';
 
 /** The fields of a target (sprite or stage) that scratch-vm sends with every 'targetsUpdate'. */
@@ -194,7 +195,9 @@ export class SpritePanel {
       del.addEventListener('click', (event) => {
         event.stopPropagation();
         const name = label.textContent ?? 'this sprite';
-        if (window.confirm(`Delete "${name}"?`)) this.host.deleteSprite(target.id);
+        void confirmDialog({ title: `Delete "${name}"?`, message: 'This removes the sprite and its blocks, costumes and sounds.', confirmText: 'Delete', danger: true }).then((ok) => {
+          if (ok) this.host.deleteSprite(target.id);
+        });
       });
       el.appendChild(del);
     }

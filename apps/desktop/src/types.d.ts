@@ -12,6 +12,9 @@ interface CodewarpBridge {
   saveProject(suggestedName: string, data: Uint8Array): Promise<string | null>;
   pickFile(title: string, extensions: string[]): Promise<{ name: string; data: Uint8Array } | null>;
   getVersion(): Promise<string>;
+  installUpdate(): Promise<void>;
+  getUpdateState(): Promise<UpdateEvent>;
+  onUpdateEvent(listener: (event: UpdateEvent) => void): void;
   /** Ask for updates now. Resolves with a short message for the person. */
   checkForUpdates(): Promise<string>;
   setAutoUpdate(enabled: boolean): void;
@@ -26,4 +29,16 @@ interface Window {
 // Set by Vite.
 interface ImportMeta {
   readonly env: { readonly DEV: boolean; readonly [key: string]: unknown };
+}
+
+/** What the updater reports (see electron/main.cjs). */
+interface UpdateEvent {
+  type: 'idle' | 'available' | 'progress' | 'ready' | 'installing' | 'installed' | 'install-failed';
+  phase?: string;
+  version?: string;
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  bytesPerSecond?: number;
+  message?: string;
 }

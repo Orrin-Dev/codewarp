@@ -91,35 +91,104 @@ function tell(message) {
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send('update:status', message);
 }
 
+// What the update is doing, so a window opened later can show the right thing.
+let updateState = { phase: 'idle', version: '', percent: 0 };
+let downloadedFile = '';
+let installing = false;
+
+function sendEvent(event) {
+  updateState = { ...updateState, ...event, phase: event.type };
+  for (const win of BrowserWindow.getAllWindows()) win.webContents.send('update:event', event);
+}
+
+/** 'rpm' or 'deb' for a package install (electron-builder writes this file), otherwise null. */
+function packageType() {
+  try {
+    const type = require('node:fs').readFileSync(path.join(process.resourcesPath, 'package-type'), 'utf8').trim();
+    return type === 'rpm' || type === 'deb' ? type : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Install the downloaded update and restart. The package manager replaces the app's files while we
- * are still running, which crashes the open window, so close every window first, stop our own "quit
- * when the last window closes" rule from racing the installer, and make sure we really exit afterwards.
+ * Install a downloaded .rpm/.deb with the system's password prompt (pkexec). electron-updater does this
+ * with a blocking call that freezes the window and then replaces the app's files under it, which crashed
+ * the app. Here the install runs on the side, the window stays alive and shows what is happening, and
+ * we only relaunch once it has finished.
  */
-function installNow() {
-  app.removeAllListeners('window-all-closed');
-  for (const win of BrowserWindow.getAllWindows()) win.destroy();
-  setImmediate(() => {
-    try {
-      autoUpdater.quitAndInstall(false, true);
-    } catch (error) {
-      console.warn('[update] quitAndInstall failed:', error);
-    }
-    // If the app is still here a few seconds after the install finished, leave anyway (and relaunch).
-    setTimeout(() => app.exit(0), 4000);
+function runPrivileged(type, file) {
+  const { spawn } = require('node:child_process');
+  const args = type === 'rpm' ? ['rpm', '-U', '--replacepkgs', '--nosignature', file] : ['dpkg', '-i', file];
+  return new Promise((resolve, reject) => {
+    const child = spawn('pkexec', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = '';
+    child.stdout.on('data', (d) => (output += d));
+    child.stderr.on('data', (d) => (output += d));
+    child.on('error', (error) => reject(new Error(error.code === 'ENOENT' ? 'pkexec (polkit) is not installed, so the update cannot ask for permission.' : error.message)));
+    child.on('close', (code) => {
+      console.log('[update] install output:', output.trim());
+      if (code === 0) return resolve();
+      if (code === 126 || code === 127) return reject(new Error('The password prompt was cancelled or not allowed, so nothing was installed.'));
+      reject(new Error(`The installer failed (exit ${code}). ${output.trim().split('\n').slice(-3).join(' ')}`.trim()));
+    });
   });
+}
+
+async function performInstall() {
+  if (installing) return;
+  installing = true;
+  sendEvent({ type: 'installing' });
+  try {
+    const type = packageType();
+    if (type && downloadedFile && require('node:fs').existsSync(downloadedFile)) {
+      await runPrivileged(type, downloadedFile);
+      sendEvent({ type: 'installed' });
+      setTimeout(() => {
+        app.relaunch();
+        app.exit(0);
+      }, 800);
+    } else {
+      // AppImage and the Windows installer: electron-updater replaces the file safely.
+      app.removeAllListeners('window-all-closed');
+      setImmediate(() => {
+        try {
+          autoUpdater.quitAndInstall(false, true);
+        } catch (error) {
+          console.warn('[update] quitAndInstall failed:', error);
+          installing = false;
+          sendEvent({ type: 'install-failed', message: String(error.message || error) });
+        }
+      });
+      setTimeout(() => app.exit(0), 15000); // a safety net if the app is somehow still here
+    }
+  } catch (error) {
+    installing = false;
+    console.warn('[update] install failed:', error);
+    sendEvent({ type: 'install-failed', message: String(error.message || error) });
+  }
 }
 
 function setupAutoUpdate() {
   if (!updatesSupported()) return;
   autoUpdater.channel = 'latest';
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  // For .rpm/.deb the install asks for a password, so it only happens when the person presses Restart.
+  autoUpdater.autoInstallOnAppQuit = !packageType();
   autoUpdater.allowDowngrade = false;
 
   autoUpdater.on('checking-for-update', () => tell('Checking for updates…'));
-  autoUpdater.on('update-available', (info) => tell(`Downloading version ${info.version}…`));
-  autoUpdater.on('update-not-available', () => tell('Codewarp is up to date.'));
+  autoUpdater.on('update-available', (info) => {
+    tell(`Downloading version ${info.version}…`);
+    sendEvent({ type: 'available', version: info.version, percent: 0 });
+  });
+  autoUpdater.on('download-progress', (p) => {
+    sendEvent({ type: 'progress', percent: p.percent, transferred: p.transferred, total: p.total, bytesPerSecond: p.bytesPerSecond });
+  });
+  autoUpdater.on('update-not-available', () => {
+    tell('Codewarp is up to date.');
+    sendEvent({ type: 'idle' });
+  });
   autoUpdater.on('error', (error) => {
     updateBusy = false;
     const text = error == null ? 'unknown error' : String(error.message);
@@ -130,20 +199,13 @@ function setupAutoUpdate() {
     } else {
       tell(`Could not check for updates: ${text.split('\n')[0].slice(0, 200)}`);
     }
+    sendEvent({ type: 'idle' });
   });
-  autoUpdater.on('update-downloaded', async (info) => {
+  autoUpdater.on('update-downloaded', (info) => {
     updateBusy = false;
-    tell(`Version ${info.version} is ready. It installs when you close Codewarp.`);
-    const { response } = await dialog.showMessageBox({
-      type: 'info',
-      title: 'Update ready',
-      message: `Codewarp ${info.version} has been downloaded.`,
-      detail: 'Restart now to install it, or it will install the next time you close the app.',
-      buttons: ['Restart now', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (response === 0) installNow();
+    downloadedFile = info.downloadedFile || '';
+    tell(`Version ${info.version} is ready to install.`);
+    sendEvent({ type: 'ready', version: info.version, percent: 100 });
   });
 
   const run = () => {
@@ -154,6 +216,9 @@ function setupAutoUpdate() {
   setTimeout(run, 8000);
   updateTimer = setInterval(run, UPDATE_EVERY_MS);
 }
+
+ipcMain.handle('update:install', () => performInstall());
+ipcMain.handle('update:state', () => updateState);
 
 ipcMain.handle('app:version', () => app.getVersion());
 

@@ -11,6 +11,7 @@ import { Collab } from './collab';
 import { CollabUi } from './collabUi';
 import { SettingsPanel } from './settingsPanel';
 import { applySavedTheme, applyScratchSprites, getAutoUpdate, getUpdateChannel, getFramerate, getScratchSprites } from './settings';
+import { installUpdateUi } from './updateUi';
 import { Backpack } from './backpack';
 import { diagnostics, installDiagnostics } from './diagnostics';
 
@@ -73,6 +74,7 @@ const SHAPE_COLORS: [string, string][] = [
 
 function boot(): void {
   installDiagnostics();
+  installUpdateUi();
   applySavedTheme();
   applyScratchSprites(getScratchSprites());
   window.codewarp?.setAutoUpdate(getAutoUpdate());

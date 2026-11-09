@@ -242,7 +242,7 @@ export class SettingsPanel {
     check.type = 'checkbox';
     check.checked = getAutoUpdate();
     check.addEventListener('change', () => saveAutoUpdate(check.checked));
-    label.append(check, element('span', '', 'Check for updates automatically and install them when you close Codewarp'));
+    label.append(check, element('span', '', 'Check for updates automatically (you choose when to restart)'));
     section.appendChild(label);
 
     const row = element('div', 'cw-settings-buttons');
