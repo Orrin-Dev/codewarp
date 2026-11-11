@@ -1,4 +1,5 @@
 import type { VmHost } from './vmHost';
+import { withActivity } from './activity';
 import { logDiag } from './diagnostics';
 import { pickFile, baseName, errorMessage } from './files';
 import {
@@ -634,8 +635,10 @@ export class SoundsPanel {
     }
     logDiag('sound', 'upload: chose', file.name, file.size, 'bytes');
     this.setStatus(`Reading ${file.name}…`);
-    const pcm = await this.decode(await file.arrayBuffer());
-    await this.addSoundFromPcm(baseName(file.name) || 'sound', pcm);
+    await withActivity(`Adding ${file.name}…`, async () => {
+      const pcm = await this.decode(await file.arrayBuffer());
+      await this.addSoundFromPcm(baseName(file.name) || 'sound', pcm);
+    });
     logDiag('sound', 'upload: added', file.name);
     this.setStatus(`Added ${file.name}`);
   }

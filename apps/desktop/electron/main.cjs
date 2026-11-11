@@ -117,19 +117,56 @@ function packageType() {
  * the app. Here the install runs on the side, the window stays alive and shows what is happening, and
  * we only relaunch once it has finished.
  */
+function installedMatches(type, file) {
+  const { execFileSync } = require('node:child_process');
+  try {
+    if (type === 'rpm') {
+      const wanted = execFileSync('rpm', ['-qp', '--qf', '%{VERSION}-%{RELEASE}', file], { encoding: 'utf8' }).trim();
+      const have = execFileSync('rpm', ['-q', '--qf', '%{VERSION}-%{RELEASE}\\n', 'codewarp'], { encoding: 'utf8' });
+      return have.split('\n').some((line) => line.trim() === wanted);
+    }
+    const wanted = execFileSync('dpkg-deb', ['-f', file, 'Version'], { encoding: 'utf8' }).trim();
+    const have = execFileSync('dpkg-query', ['-W', '-f=${Version}', 'codewarp'], { encoding: 'utf8' }).trim();
+    return wanted === have;
+  } catch {
+    return false;
+  }
+}
+
 function runPrivileged(type, file) {
-  const { spawn } = require('node:child_process');
+  const { spawn, execFile } = require('node:child_process');
   const args = type === 'rpm' ? ['rpm', '-U', '--replacepkgs', '--nosignature', file] : ['dpkg', '-i', file];
+  const ask = (cmd, cmdArgs) =>
+    new Promise((resolve) => execFile(cmd, cmdArgs, (error, stdout) => resolve(error ? '' : String(stdout).trim())));
+
+  // The package manager can report an error from the OLD version's removal script (electron-builder's
+  // update-alternatives cleanup says "not configured as an alternative" and exits 2) even though the new
+  // version is fully installed. So when the command fails, check what is actually installed.
+  const installedMatches = async () => {
+    if (type === 'rpm') {
+      const wanted = await ask('rpm', ['-qp', '--qf', '%{VERSION}-%{RELEASE}', file]);
+      const have = await ask('rpm', ['-q', '--qf', '%{VERSION}-%{RELEASE}', 'codewarp']);
+      return wanted !== '' && wanted === have;
+    }
+    const wanted = await ask('dpkg-deb', ['-f', file, 'Version']);
+    const have = await ask('dpkg-query', ['-W', '-f=${Version}', 'codewarp']);
+    return wanted !== '' && wanted === have;
+  };
+
   return new Promise((resolve, reject) => {
     const child = spawn('pkexec', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     child.stdout.on('data', (d) => (output += d));
     child.stderr.on('data', (d) => (output += d));
     child.on('error', (error) => reject(new Error(error.code === 'ENOENT' ? 'pkexec (polkit) is not installed, so the update cannot ask for permission.' : error.message)));
-    child.on('close', (code) => {
+    child.on('close', async (code) => {
       console.log('[update] install output:', output.trim());
       if (code === 0) return resolve();
       if (code === 126 || code === 127) return reject(new Error('The password prompt was cancelled or not allowed, so nothing was installed.'));
+      if (await installedMatches()) {
+        console.warn(`[update] installer exited ${code} but the new version is installed; continuing`);
+        return resolve();
+      }
       reject(new Error(`The installer failed (exit ${code}). ${output.trim().split('\n').slice(-3).join(' ')}`.trim()));
     });
   });

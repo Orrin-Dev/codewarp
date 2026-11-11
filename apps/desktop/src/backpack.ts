@@ -1,3 +1,4 @@
+import { withActivity } from './activity';
 import { errorMessage } from './files';
 
 /*
@@ -71,6 +72,17 @@ export class Backpack {
     this.open = open;
     this.root.classList.toggle('open', open);
     this.render();
+    // The blocks area just got taller or shorter; let the editor measure itself again.
+    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+  }
+
+  /** A short message in the corner of the window, visible from any tab. */
+  private toast(message: string): void {
+    const el = document.createElement('div');
+    el.className = 'cw-toast';
+    el.textContent = message;
+    document.body.appendChild(el);
+    window.setTimeout(() => el.remove(), 2600);
   }
 
   private async reload(): Promise<void> {
@@ -87,8 +99,9 @@ export class Backpack {
     const full: BackpackItem = { ...item, id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, added: Date.now() };
     await run('readwrite', (s) => s.put(full));
     this.items.unshift(full);
-    this.setOpen(true);
+    this.render();
     this.hooks.setStatus(`Added "${item.name}" to the backpack`);
+    this.toast(`🎒 Added "${item.name}" to the backpack (see the Code tab)`);
   }
 
   private async remove(id: string): Promise<void> {
@@ -104,6 +117,15 @@ export class Backpack {
   }
 
   async addCostume(costume: any): Promise<void> {
+    try {
+      await this.addCostumeInner(costume);
+    } catch (error) {
+      this.toast(`Backpack: ${errorMessage(error)}`);
+      throw error;
+    }
+  }
+
+  private async addCostumeInner(costume: any): Promise<void> {
     const data: Uint8Array | undefined = costume.asset?.data;
     if (!data) throw new Error('This costume has no image data yet');
     const format = String(costume.dataFormat);
@@ -129,6 +151,15 @@ export class Backpack {
   }
 
   async addSound(sound: any): Promise<void> {
+    try {
+      await this.addSoundInner(sound);
+    } catch (error) {
+      this.toast(`Backpack: ${errorMessage(error)}`);
+      throw error;
+    }
+  }
+
+  private async addSoundInner(sound: any): Promise<void> {
     const data: Uint8Array | undefined = sound.asset?.data;
     if (!data) throw new Error('This sound has no data yet');
     await this.save({
@@ -255,7 +286,7 @@ export class Backpack {
         void this.remove(item.id);
       });
       card.append(label, del);
-      card.addEventListener('click', () => void this.use(item).catch((err) => this.hooks.setStatus(`Backpack: ${errorMessage(err)}`)));
+      card.addEventListener('click', () => void withActivity(`Adding ${item.kind === 'script' ? 'script' : item.name}…`, () => this.use(item)).catch((err) => this.hooks.setStatus(`Backpack: ${errorMessage(err)}`)));
       this.list.appendChild(card);
     }
   }

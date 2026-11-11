@@ -11,6 +11,7 @@ import { Collab } from './collab';
 import { CollabUi } from './collabUi';
 import { SettingsPanel } from './settingsPanel';
 import { applySavedTheme, applyScratchSprites, getAutoUpdate, getUpdateChannel, getFramerate, getScratchSprites } from './settings';
+import { withActivity } from './activity';
 import { installUpdateUi } from './updateUi';
 import { Backpack } from './backpack';
 import { diagnostics, installDiagnostics } from './diagnostics';
@@ -189,9 +190,11 @@ function boot(): void {
     const file = await pickFile('.png,.jpg,.jpeg,.svg');
     if (!file) return;
     try {
-      const image = await readSpriteImage(file);
       const baseName = file.name.replace(/\.[^.]+$/, '') || `Sprite${spriteCount() + 1}`;
-      await host.addSpriteFromImage(baseName, image);
+      await withActivity(`Adding ${baseName}…`, async () => {
+        const image = await readSpriteImage(file);
+        await host.addSpriteFromImage(baseName, image);
+      });
       setStatus(`Added ${baseName}`);
     } catch (error: any) {
       console.error(error);
@@ -212,7 +215,7 @@ function boot(): void {
 
   $('btn-new').addEventListener('click', async () => {
     if (blockedByCollab()) return;
-    await host.newProject();
+    await withActivity('Creating a new project…', () => host.newProject());
     projectName = 'project.sb3';
     setStatus('New project');
   });
@@ -232,7 +235,7 @@ function boot(): void {
       picked.data.byteOffset + picked.data.byteLength,
     ) as ArrayBuffer;
     try {
-      await host.load(buffer);
+      await withActivity(`Opening ${picked.name}…`, () => host.load(buffer));
       projectName = picked.name;
       setStatus(`Opened ${picked.name}`);
     } catch (error) {
@@ -242,7 +245,7 @@ function boot(): void {
   });
 
   $('btn-save').addEventListener('click', async () => {
-    const bytes = await host.saveSb3();
+    const bytes = await withActivity('Saving the project…', () => host.saveSb3());
     if (window.codewarp) {
       const savedTo = await window.codewarp.saveProject(projectName, bytes);
       if (savedTo) setStatus(`Saved ${savedTo}`);

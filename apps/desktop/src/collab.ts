@@ -1,3 +1,4 @@
+import { startActivity, type Activity } from './activity';
 import { logDiag } from './diagnostics';
 import { MAX_SNAPSHOT_CHUNKS, SNAPSHOT_CHUNK_BYTES } from '@codewarp/core';
 import type { ClientMessage, MonitorState, Op, Peer, RoomInfo, ServerMessage } from '@codewarp/core';
@@ -86,6 +87,7 @@ export class Collab {
   private queue: Op[] = [];
   private flushTimer: number | undefined;
   private buffered: { seq: number; ops: Op[] }[] = [];
+  private download: Activity | null = null;
   private snapshotTimer: number | undefined;
   private incoming: { id: string; total: number; parts: Uint8Array[]; got: number; shown: number } | null = null;
   private heartbeatTimer: number | undefined;
@@ -238,6 +240,7 @@ export class Collab {
 
   /** Leave the room for good. */
   disconnect(): void {
+    this.finishDownload();
     this.manualClose = true;
     window.clearTimeout(this.reconnectTimer);
     const ws = this.ws;
@@ -455,8 +458,15 @@ export class Collab {
 
   // ---- joining: get the host's project ----------------------------------------------
 
+  private finishDownload(): void {
+    this.download?.done();
+    this.download = null;
+  }
+
   private requestSnapshot(): void {
     this.incoming = null;
+    if (!this.download) this.download = startActivity('Joining the room…');
+    this.download.set(null, 'Waiting for the host to send the project');
     this.send({ t: 'snapshot-request' });
     this.armSnapshotTimer(SNAPSHOT_TIMEOUT_MS);
   }
@@ -465,6 +475,7 @@ export class Collab {
     window.clearTimeout(this.snapshotTimer);
     this.snapshotTimer = window.setTimeout(() => {
       if (this.state !== 'syncing') return;
+      this.finishDownload();
       this.events.onMessage(
         this.incoming
           ? 'The project download stalled. Join again to retry.'
@@ -521,11 +532,13 @@ export class Collab {
     }
     const transfer = this.incoming;
     if (msg.total !== transfer.total) return;
+    if (!this.download) this.download = startActivity('Joining the room…');
     if (!transfer.parts[msg.index]) {
       transfer.parts[msg.index] = fromBase64(msg.data);
       transfer.got++;
     }
     this.armSnapshotTimer(SNAPSHOT_IDLE_MS);
+    this.download.set(transfer.got / transfer.total, `Downloading the project… ${Math.floor((transfer.got / transfer.total) * 100)}%`);
 
     if (transfer.total > 8) {
       const percent = Math.floor((transfer.got / transfer.total) * 10) * 10;
@@ -537,6 +550,7 @@ export class Collab {
     if (transfer.got < transfer.total) return;
 
     this.incoming = null;
+    this.download.set(null, 'Opening the project…');
     const bytes = new Uint8Array(transfer.parts.reduce((sum, part) => sum + part.length, 0));
     let offset = 0;
     for (const part of transfer.parts) {
@@ -549,14 +563,18 @@ export class Collab {
   private async receiveSnapshot(seq: number, bytes: Uint8Array): Promise<void> {
     if (this.state !== 'syncing') return;
     window.clearTimeout(this.snapshotTimer);
+    if (!this.download) this.download = startActivity('Joining the room…');
+    this.download.set(null, 'Opening the project…');
     try {
       await this.vmHost.load(bytes.buffer as ArrayBuffer);
     } catch (error) {
       console.error(error);
+      this.finishDownload();
       this.events.onMessage("Could not open the host's project");
       this.disconnect();
       return;
     }
+    this.finishDownload();
     this.lastSeq = Math.max(this.lastSeq, seq);
     // Edits that happened while we were downloading. Anything already inside the snapshot is skipped.
     const pending = this.buffered.filter((b) => b.seq > seq).sort((a, b) => a.seq - b.seq);

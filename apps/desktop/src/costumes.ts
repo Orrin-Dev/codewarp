@@ -1,5 +1,6 @@
 import type { VmHost } from './vmHost';
 import { PaintEditor, type PaintResult } from './paint';
+import { withActivity } from './activity';
 import { pickFile, baseName, errorMessage } from './files';
 
 const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', svg: 'image/svg+xml' };
@@ -262,8 +263,10 @@ export class CostumesPanel {
     const lower = file.name.toLowerCase();
     const ext = lower.endsWith('.svg') ? 'svg' : lower.endsWith('.png') ? 'png' : /\.jpe?g$/.test(lower) ? 'jpg' : null;
     if (!ext) throw new Error('Use a .png, .jpg or .svg image');
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    await this.addCostume(baseName(file.name) || 'costume', ext, bytes);
+    await withActivity(`Adding ${file.name}…`, async () => {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await this.addCostume(baseName(file.name) || 'costume', ext, bytes);
+    });
   }
 
   // ---- editor <-> VM ------------------------------------------------------

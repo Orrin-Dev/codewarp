@@ -1,3 +1,4 @@
+import { activityHost } from './activity';
 import { confirmDialog } from './dialogs';
 
 /*
@@ -31,7 +32,7 @@ export function installUpdateUi(): void {
   restartButton.hidden = true;
   restartButton.addEventListener('click', () => void bridge.installUpdate());
   card.append(title, track, detail, restartButton);
-  document.body.appendChild(card);
+  activityHost().appendChild(card); // one stack in the bottom-right corner with the other progress cards
 
   // ---- the install screen ----
   let overlay: HTMLElement | null = null;
