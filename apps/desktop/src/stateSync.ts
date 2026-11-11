@@ -336,9 +336,9 @@ export class StateSync {
       }
 
       // Changed sprites.
-      // Always send the files for added or changed costumes and sounds. Skipping ones we think
-      // everyone already has caused "missing file" errors when someone didn't (a deleted then
-      // re-added costume, a failed earlier change, a late joiner), and the whole change was lost.
+      // Send the files only for pictures and sounds this sprite did not have in the last shared state.
+      // (Resending every file of the sprite on each small change made big projects crawl and desync.
+      // The receiver also checks its own project first, so a file it already has is never needed.)
       const known = new Set<string>();
       const needed = new Map<string, AssetBlob>();
       for (const [name, state] of next) {
@@ -349,8 +349,11 @@ export class StateSync {
         this.baseline.set(name, before && this.ignoreProps ? { ...state, props: before.props } : state);
         const target = this.findTarget(name);
         if (target) {
-          for (const c of diff.costumes ?? []) this.collectAsset(needed, known, c.assetId, target.getCostumes());
-          for (const s of diff.sounds ?? []) this.collectAsset(needed, known, s.assetId, target.getSounds());
+          const had = new Set<string>();
+          for (const c of before?.costumes ?? []) had.add(c.assetId);
+          for (const s of before?.sounds ?? []) had.add(s.assetId);
+          for (const c of diff.costumes ?? []) if (!had.has(c.assetId)) this.collectAsset(needed, known, c.assetId, target.getCostumes());
+          for (const s of diff.sounds ?? []) if (!had.has(s.assetId)) this.collectAsset(needed, known, s.assetId, target.getSounds());
         }
       }
       if (changes.length > 0) {
@@ -519,7 +522,16 @@ export class StateSync {
     if (change.sounds) await this.applySounds(target, change.sounds, assets);
     if (change.props && !this.ignoreIncomingProps) this.applyProps(target, change.props);
     this.vm.emitTargetsUpdate(false);
-    this.baseline.set(change.name, this.readSprite(target));
+    // Only mark the parts we just applied as shared. Anything else you changed meanwhile is still
+    // waiting to be sent, and overwriting the whole baseline here silently dropped it.
+    const now = this.readSprite(target);
+    const before = this.baseline.get(change.name);
+    this.baseline.set(change.name, {
+      name: change.name,
+      props: change.props && !this.ignoreIncomingProps ? now.props : before?.props ?? now.props,
+      costumes: change.costumes ? now.costumes : before?.costumes ?? now.costumes,
+      sounds: change.sounds ? now.sounds : before?.sounds ?? now.sounds,
+    });
   }
 
   private applyProps(target: any, p: SpriteProps): void {

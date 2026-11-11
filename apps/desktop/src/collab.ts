@@ -46,11 +46,13 @@ const SNAPSHOT_IDLE_MS = 30000;
 const SEND_BUFFER_LIMIT = 4 * 1024 * 1024;
 const HEARTBEAT_MS = 12000;
 const DEAD_AFTER_MS = 35000;
-const DIGEST_EVERY_MS = 8000;
+const DIGEST_EVERY_MS = 10000;
+/** Fingerprints cost more the bigger the project is, so wait at least this many times longer than one took. */
+const DIGEST_COST_FACTOR = 60;
 const QUIET_MS = 1500;
 const GIVE_UP_RECONNECT_MS = 5 * 60 * 1000;
-const STRIKES_BEFORE_REPAIR = 2;
-const MAX_REPAIRS_PER_MINUTE = 3;
+const STRIKES_BEFORE_REPAIR = 3;
+const MAX_REPAIRS_PER_MINUTE = 2;
 const FLUSH_MS = 30;
 
 /**
@@ -92,6 +94,7 @@ export class Collab {
   private incoming: { id: string; total: number; parts: Uint8Array[]; got: number; shown: number } | null = null;
   private heartbeatTimer: number | undefined;
   private digestTimer: number | undefined;
+  private digestNotBefore = 0;
   private stopEdits: (() => void) | null = null;
 
   private readonly strikes = new Map<string, number>();
@@ -638,7 +641,10 @@ export class Collab {
   /** Host: send a fingerprint of the project so everyone else can check they match. */
   private sendDigest(): void {
     if (this.state !== 'live' || !this.isHost || this.runnerId || !this.quiet()) return;
+    if (Date.now() < this.digestNotBefore) return;
+    const started = performance.now();
     const digest = this.stateSync.digest();
+    this.digestNotBefore = Date.now() + (performance.now() - started) * DIGEST_COST_FACTOR;
     this.send({ t: 'digest', seq: this.lastSeq, sprites: digest.sprites, monitors: digest.monitors });
   }
 
@@ -646,7 +652,10 @@ export class Collab {
     // Only compare when we are at exactly the same point as the host and nothing is in flight.
     if (this.state !== 'live' || this.isHost || this.runnerId || host.seq !== this.lastSeq || !this.quiet()) return;
 
+    if (Date.now() < this.digestNotBefore) return;
+    const started = performance.now();
     const mine = this.stateSync.digest();
+    this.digestNotBefore = Date.now() + (performance.now() - started) * DIGEST_COST_FACTOR;
     const comparison = compareDigests(mine.sprites, host.sprites);
     const problems: string[] = [];
     if (comparison.structureDiffers || comparison.differing.includes('Stage')) problems.push('@all');
