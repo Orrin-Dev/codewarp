@@ -55,6 +55,7 @@ function resolveBlocks(): any {
 export class BlocksEditor {
   private workspace: any;
   private readonly editListeners = new Set<(edit: LocalEdit) => void>();
+  private readonly changeListeners = new Set<() => void>();
   private readonly presenceListeners = new Set<(presence: Presence) => void>();
 
   // Skipping needless reloads: what is on screen, and whether the user changed it since.
@@ -116,7 +117,10 @@ export class BlocksEditor {
     // category when blocks, variables or custom blocks change, or new entries only show up after
     // switching categories.
     this.workspace.addChangeListener((event: any) => {
-      if (event?.type !== 'ui') this.workspaceDirty = true;
+      if (event?.type !== 'ui') {
+        this.workspaceDirty = true;
+        for (const listener of this.changeListeners) listener();
+      }
       if (REFRESH_EVENTS.has(event?.type) && this.affectsPalette(event)) this.scheduleToolboxRefresh();
       if (event?.type === 'ui' && event.element === 'selected') this.emitPresence({ kind: 'select', target: this.targetName(), block: String(event.newValue ?? '') });
     });
@@ -307,6 +311,17 @@ export class BlocksEditor {
     }
   }
 
+  /** Be told when the blocks change, whoever changed them (text mode keeps its text up to date with this). */
+  onBlocksChanged(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
+  /** What text mode needs to put scripts into the workspace. */
+  codeContext(): { workspace: any; Blockly: any } {
+    return { workspace: this.workspace, Blockly: ScratchBlocks };
+  }
+
   /** Be told about every edit the user makes. Returns a function that stops listening. */
   onLocalEdit(listener: (edit: LocalEdit) => void): () => void {
     this.editListeners.add(listener);
@@ -368,6 +383,7 @@ export class BlocksEditor {
     } catch (error) {
       console.warn('Remote edit did not apply to the VM', edit.event, error);
     }
+    for (const listener of this.changeListeners) listener();
     const eventType = String(edit.event.type);
     const text = String(edit.event.xml ?? edit.event.oldXml ?? '');
     const blockType = edit.event.blockId ? this.workspace.getBlockById(String(edit.event.blockId))?.type : '';

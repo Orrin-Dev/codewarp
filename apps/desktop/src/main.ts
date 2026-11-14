@@ -14,6 +14,7 @@ import { applySavedTheme, applyScratchSprites, getAutoUpdate, getUpdateChannel, 
 import { withActivity } from './activity';
 import { installUpdateUi } from './updateUi';
 import { Backpack } from './backpack';
+import { CodeEditor } from './codeEditor';
 import { diagnostics, installDiagnostics } from './diagnostics';
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -261,17 +262,19 @@ function boot(): void {
   $('btn-flag').addEventListener('click', () => collab.run());
   $('btn-stop').addEventListener('click', () => collab.stop());
 
-  // ---- Mode toggle (text mode is a read-only preview for now) -----------
+  // ---- Mode toggle: blocks or text (C#-style / Python-style) ---------------
 
   const blocksHost = $('blocks-host');
-  const textHost = $<HTMLTextAreaElement>('text-host');
+  const textHost = $('text-host');
+  const codeEditor = new CodeEditor(textHost, host.vm, editor);
   const modeBlocks = $('mode-blocks');
   const modeText = $('mode-text');
 
   function showBlocks(): void {
     showTab('code');
+    codeEditor.hide();
     textHost.hidden = true;
-    blocksHost.hidden = false;
+    blocksHost.classList.remove('cw-offscreen');
     modeBlocks.classList.add('active');
     modeText.classList.remove('active');
     editor.resize();
@@ -279,10 +282,10 @@ function boot(): void {
 
   function showText(): void {
     showTab('code');
-    // Placeholder: the C#-style and Python-style printers will render here later.
-    textHost.value = JSON.stringify(host.editingTargetJson(), null, 2);
-    blocksHost.hidden = true;
+    // The blocks stay alive behind the text (hidden, not removed) so edits in the text are real block edits.
+    blocksHost.classList.add('cw-offscreen');
     textHost.hidden = false;
+    codeEditor.show();
     modeText.classList.add('active');
     modeBlocks.classList.remove('active');
   }

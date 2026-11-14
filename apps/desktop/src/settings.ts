@@ -52,6 +52,7 @@ interface Stored {
   scratchSprites?: boolean;
   autoUpdate?: boolean;
   updateChannel?: 'dev' | 'production';
+  codeSkin?: 'csharp' | 'python';
 }
 
 const KEY = 'codewarp.settings';
@@ -282,4 +283,17 @@ export function saveUpdateChannel(channel: UpdateChannel): void {
   stored.updateChannel = channel;
   write(stored);
   window.codewarp?.setUpdateChannel(channel);
+}
+
+export type CodeSkin = 'csharp' | 'python';
+
+/** Which way text mode is written. */
+export function getCodeSkin(): CodeSkin {
+  return read().codeSkin === 'python' ? 'python' : 'csharp';
+}
+
+export function saveCodeSkin(skin: CodeSkin): void {
+  const stored = read();
+  stored.codeSkin = skin;
+  write(stored);
 }

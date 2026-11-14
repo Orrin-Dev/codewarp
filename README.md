@@ -9,6 +9,10 @@ A custom desktop app for making Scratch projects, with two ways to code that you
 ### Two interchangeable coding modes
 - A custom **text-based syntax** and the classic **block-based** editor.
 - Switch between text and blocks at any time without losing or breaking your code.
+- Text mode can be written **C#-style** or **Python-style** (a switch at the top). Both are the same language underneath, so you can flip between them, or back to blocks, without losing anything.
+- While you type there is syntax highlighting, red underlines with a list of problems, and a popup next to the cursor with suggestions (typos are forgiven: `mv` finds `Move`), menu values (sprite, costume, sound and key names) and a tip showing the block's arguments.
+- The **Code bank** (button at the top of text mode) lists every block as code, what it does and which Scratch block it is, with Insert and Copy.
+- If your text has a problem the blocks keep their last working version, and your text is applied again as soon as it is valid. Scripts that use blocks text mode cannot write yet (for example pen blocks) are shown as `// kept: ...` lines and are never touched.
 - Export to **.sb3** and use your project on the Scratch website.
 
 ### Scratch account linking
