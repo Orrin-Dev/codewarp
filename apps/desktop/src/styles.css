@@ -887,3 +887,14 @@ button.active {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* flat toggles: no glass, gradient or glow */
+button.active { background: var(--accent); border-color: var(--accent); box-shadow: none; }
+.mode-toggle, .cw-seg { background: var(--panel-2); box-shadow: none; border-radius: 8px; }
+.mode-toggle button, .cw-seg button { border-radius: 6px; }
+.mode-toggle button.active, .cw-seg button.active { background: var(--accent); box-shadow: none; color: #fff; }
+.cw-modal-buttons button:last-child:not(.cw-danger) { background: var(--accent); }
+
+/* keep the accent glow on active toggles */
+button.active { box-shadow: 0 4px 14px var(--accent-mid); }
+.mode-toggle button.active, .cw-seg button.active { box-shadow: 0 2px 10px var(--accent-mid); }
