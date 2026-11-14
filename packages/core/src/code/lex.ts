@@ -23,7 +23,7 @@ export class SyntaxFail extends Error {
   }
 }
 
-const SYMBOLS = ['&&', '||', '==', '!=', '<=', '>=', '+=', '-=', '(', ')', '{', '}', '[', ']', ',', ';', ':', '.', '=', '<', '>', '+', '-', '*', '/', '%', '!', '@'];
+const SYMBOLS = ['&&', '||', '==', '!=', '<=', '>=', '++', '+=', '-=', '(', ')', '{', '}', '[', ']', ',', ';', ':', '.', '=', '<', '>', '+', '-', '*', '/', '%', '!', '@'];
 
 const isIdentStart = (c: string): boolean => /[\p{L}_]/u.test(c);
 const isIdentPart = (c: string): boolean => /[\p{L}\p{N}_]/u.test(c);

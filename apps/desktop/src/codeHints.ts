@@ -1,4 +1,4 @@
-import { BLOCKS, KEYWORDS, type ArgSpec, type BlockSpec, type Skin, allDocs, matchScore, skinName } from '@codewarp/core';
+import { BLOCKS, KEYWORDS, type ArgSpec, type BlockSpec, type Skin, allDocs, matchScore, methodName, skinName } from '@codewarp/core';
 
 /*
  * The popup that shows up next to where you type in text mode: suggestions that forgive typos ("mv" finds
@@ -51,33 +51,35 @@ const FIELD_VALUES: Record<string, string[]> = {
 
 const SNIPPETS: Record<Skin, Record<string, { text: string; detail: string }>> = {
   csharp: {
-    when: { text: 'when $0 {\n    \n}', detail: 'start a script' },
+    when: { text: '[When$0]\nvoid On() {\n    \n}', detail: 'start a script' },
     if: { text: 'if ($0) {\n    \n}', detail: 'if <> then' },
     else: { text: 'else {\n    $0\n}', detail: 'else part' },
-    repeat: { text: 'repeat ($0) {\n    \n}', detail: 'repeat (10)' },
-    forever: { text: 'forever {\n    $0\n}', detail: 'forever' },
-    until: { text: 'until ($0) {\n    \n}', detail: 'repeat until <>' },
-    var: { text: 'var $0;', detail: 'declare a variable' },
-    list: { text: 'list $0;', detail: 'declare a list' },
+    for: { text: 'for (int i = 0; i < $0; i++) {\n    \n}', detail: 'repeat (10)' },
+    while: { text: 'while ($0) {\n    \n}', detail: 'repeat until not <>' },
+    forever: { text: 'while (true) {\n    $0\n}', detail: 'forever' },
+    until: { text: 'while (!$0) {\n    \n}', detail: 'repeat until <>' },
+    public: { text: 'public var $0;', detail: 'variable for all sprites' },
+    private: { text: 'private var $0;', detail: 'variable for this sprite only' },
+    list: { text: 'public List<var> $0;', detail: 'declare a list' },
     void: { text: 'void $0() {\n    \n}', detail: 'define your own block' },
-    local: { text: 'local var $0;', detail: 'variable for this sprite only' },
-    cloud: { text: 'cloud var $0;', detail: 'cloud variable' },
-    loose: { text: 'loose {\n    $0\n}', detail: 'blocks with no event' },
+    cloud: { text: '[Cloud] public var $0;', detail: 'cloud variable' },
+    loose: { text: '[NoEvent]\nvoid Loose() {\n    $0\n}', detail: 'blocks with no event' },
   },
   python: {
-    when: { text: 'when $0:\n    ', detail: 'start a script' },
+    when: { text: '@when_$0\ndef on_():\n    ', detail: 'start a script' },
     if: { text: 'if $0:\n    ', detail: 'if <> then' },
     elif: { text: 'elif $0:\n    ', detail: 'else if' },
     else: { text: 'else:\n    $0', detail: 'else part' },
-    repeat: { text: 'repeat $0:\n    ', detail: 'repeat (10)' },
-    forever: { text: 'forever:\n    $0', detail: 'forever' },
-    until: { text: 'until $0:\n    ', detail: 'repeat until <>' },
-    var: { text: 'var $0', detail: 'declare a variable' },
-    list: { text: 'list $0', detail: 'declare a list' },
+    for: { text: 'for _ in range($0):\n    ', detail: 'repeat (10)' },
+    while: { text: 'while $0:\n    ', detail: 'repeat until not <>' },
+    forever: { text: 'while True:\n    $0', detail: 'forever' },
+    until: { text: 'while not $0:\n    ', detail: 'repeat until <>' },
+    list: { text: '$0: List', detail: 'declare a list' },
+    variable: { text: '$0: Variable', detail: 'declare a variable' },
+    local: { text: '$0: Local[Variable]', detail: 'variable for this sprite only' },
+    cloud: { text: '$0: Cloud[Variable]', detail: 'cloud variable' },
     def: { text: 'def $0():\n    ', detail: 'define your own block' },
-    local: { text: 'local var $0', detail: 'variable for this sprite only' },
-    cloud: { text: 'cloud var $0', detail: 'cloud variable' },
-    loose: { text: 'loose:\n    $0', detail: 'blocks with no event' },
+    loose: { text: '@no_event\ndef loose():\n    $0', detail: 'blocks with no event' },
   },
 };
 
@@ -248,7 +250,7 @@ export class CodeHints {
 
     let items: Item[] = [];
     // after "when": event names
-    if (/(^|\s)when\s+$/.test(prefix)) items = this.hatItems(word, skin);
+    if (/(\[When|@when_)$/.test(prefix)) items = this.hatItems(word, skin);
     else if (/([\p{L}\p{N}_`]+)\.$/u.test(prefix)) {
       const owner = /([\p{L}\p{N}_`]+)\.$/u.exec(prefix)![1];
       items = this.host.declared().get(owner) === 'list' ? this.methodItems(word, skin) : [];
@@ -387,9 +389,10 @@ export class CodeHints {
   private hatItems(word: string, skin: Skin): Item[] {
     return BLOCKS.filter((b) => b.kind === 'H')
       .map((spec) => {
-        const name = skinName(spec.name, skin);
+        const name = skin === 'csharp' ? skinName(spec.name, 'csharp') : spec.name;
         const slots = spec.args.filter((a) => !a.receiver);
-        return { label: name, insert: slots.length ? `${name}()` : name, back: slots.length ? 1 : 0, detail: LABELS.get(spec.op)?.label ?? '', kind: 'event' as const, score: matchScore(word, name) };
+        const close = skin === 'csharp' ? ']' : '';
+        return { label: name, insert: slots.length ? `${name}()${close}` : name + close, back: slots.length ? 1 + close.length : 0, detail: LABELS.get(spec.op)?.label ?? '', kind: 'event' as const, score: matchScore(word, name) };
       })
       .filter((i) => i.score > 0)
       .sort((a, b) => b.score - a.score);
@@ -398,7 +401,7 @@ export class CodeHints {
   private methodItems(word: string, skin: Skin): Item[] {
     return BLOCKS.filter((b) => b.args.some((a) => a.receiver))
       .map((spec) => {
-        const name = skinName(spec.name, skin);
+        const name = methodName(spec, skin);
         const slots = spec.args.filter((a) => !a.receiver);
         return { label: name, insert: `${name}()`, back: slots.length ? 1 : 0, detail: `(${slots.map(argLabel).join(', ')})`, kind: 'method' as const, score: matchScore(word, name) };
       })

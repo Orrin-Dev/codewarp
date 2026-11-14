@@ -1,4 +1,4 @@
-import { BLOCKS, BY_OP, INFIX_BY_SYMBOL, NOT_PREC, type BlockSpec, type Skin, skinName } from './spec';
+import { BLOCKS, BY_OP, INFIX_BY_SYMBOL, NOT_PREC, type BlockSpec, type Skin, methodName, methodSpellings, skinName } from './spec';
 import { SyntaxFail, lex, type Token } from './lex';
 import { defaultProccode, procPrintedName } from './print';
 import { closest } from './suggest';
@@ -44,7 +44,7 @@ function tables(): Tables {
   for (const spec of BLOCKS) {
     if (spec.kind === 'H') add(t.hats, spec);
     else if (spec.kind === 'C') continue;
-    else if (spec.args.some((a) => a.receiver)) add(t.methods, spec);
+    else if (spec.args.some((a) => a.receiver)) for (const spelling of methodSpellings(spec)) t.methods.set(spelling, spec);
     else add(t.fn, spec);
   }
   return t;
@@ -67,6 +67,12 @@ class Parser {
     private readonly opts: ParseOptions,
   ) {
     this.py = opts.skin === 'python';
+  }
+
+  private declHint(name: string, type: 'var' | 'list'): string {
+    const quoted = /^[\p{L}_][\p{L}\p{N}_]*$/u.test(name) ? name : `\`${name}\``;
+    if (this.py) return `${quoted}: ${type === 'list' ? 'List' : 'Variable'}`;
+    return `public ${type === 'list' ? 'List<var>' : 'var'} ${quoted};`;
   }
 
   // ---- token helpers ----
@@ -139,34 +145,79 @@ class Parser {
     }
   }
 
+  /**
+   * A variable or list declaration starting at token i, or null. Written
+   *   C#:      [Cloud] public var score;   private var speed;   public List<var> items;
+   *   Python:  score: Variable   speed: Local[Variable]   items: List   hi: Cloud[Variable]
+   * (the older  var score  /  local list items  forms still work).
+   */
+  private scanDecl(i: number): { decl: VarDecl; end: number } | null {
+    const t = this.t;
+    const word = (k: number): string => (t[k] && t[k].type === 'ident' && !t[k].quoted ? t[k].text : '');
+    const sym = (k: number, s: string): boolean => !!t[k] && t[k].type === 'sym' && t[k].text === s;
+    // Python annotation
+    if (t[i]?.type === 'ident' && sym(i + 1, ':')) {
+      let k = i + 2;
+      let w = word(k);
+      let local = false;
+      let cloud = false;
+      if (w === 'Local' || w === 'Cloud') {
+        if (!sym(k + 1, '[')) return null;
+        local = w === 'Local';
+        cloud = w === 'Cloud';
+        k += 2;
+        w = word(k);
+        if (!sym(k + 1, ']')) return null;
+        k += 1;
+      }
+      if (w !== 'Variable' && w !== 'List') return null;
+      return { decl: { name: t[i].text, type: w === 'List' ? 'list' : 'var', local, cloud }, end: k + 1 };
+    }
+    let j = i;
+    let cloud = false;
+    let local = false;
+    if (sym(j, '[') && word(j + 1).toLowerCase() === 'cloud' && sym(j + 2, ']')) {
+      cloud = true;
+      j += 3;
+    }
+    for (;;) {
+      const w = word(j);
+      if (w === 'cloud') cloud = true;
+      else if (w === 'local' || w === 'private') local = true;
+      else if (w === 'global' || w === 'public') local = false;
+      else break;
+      j++;
+    }
+    let type: 'var' | 'list' | null = null;
+    const w = word(j);
+    if (w === 'var') {
+      type = 'var';
+      j++;
+    } else if (w === 'list') {
+      type = 'list';
+      j++;
+    } else if (w === 'List' && sym(j + 1, '<') && (word(j + 2) === 'var' || word(j + 2) === 'object') && sym(j + 3, '>')) {
+      type = 'list';
+      j += 4;
+    }
+    if (!type || t[j]?.type !== 'ident' || sym(j + 1, '(')) return null;
+    return { decl: { name: t[j].text, type, local, cloud }, end: j + 1 };
+  }
+
   /** Variables first (a script can use one that is declared further down). */
   private prescan(): void {
     for (let i = 0; i < this.t.length; i++) {
       const tok = this.t[i];
-      if (tok.col !== 1 || tok.type !== 'ident' || tok.quoted) continue;
-      let j = i;
-      let cloud = false;
-      let local = false;
-      if (this.t[j].text === 'cloud') {
-        cloud = true;
-        j++;
-      }
-      if (this.t[j]?.text === 'local' || this.t[j]?.text === 'global') {
-        local = this.t[j].text === 'local';
-        j++;
-      }
-      const kind = this.t[j];
-      const name = this.t[j + 1];
-      if (kind?.type === 'ident' && !kind.quoted && (kind.text === 'var' || kind.text === 'list') && name?.type === 'ident') {
-        if (!this.decls.has(name.text)) this.decls.set(name.text, { name: name.text, type: kind.text as 'var' | 'list', local, cloud });
-      }
+      if (tok.col !== 1 || (tok.type !== 'ident' && tok.text !== '[')) continue;
+      const found = this.scanDecl(i);
+      if (found && !this.decls.has(found.decl.name)) this.decls.set(found.decl.name, found.decl);
     }
   }
 
   private topLevel(): void {
     const tok = this.tok;
+    if (this.scanDecl(this.p)) return this.declaration();
     if (tok.type === 'ident' && !tok.quoted) {
-      if (tok.text === 'var' || tok.text === 'list' || tok.text === 'cloud' || tok.text === 'local' || tok.text === 'global') return this.declaration();
       if (tok.text === 'when') return this.hat();
       if (tok.text === 'loose') {
         this.next();
@@ -174,51 +225,52 @@ class Parser {
         this.scripts.push({ nodes: body, x: 0, y: 0 });
         return;
       }
-      if ((!this.py && (tok.text === 'void')) || (this.py && tok.text === 'def')) return this.define([], false);
+      if ((!this.py && tok.text === 'void') || (this.py && tok.text === 'def')) return this.define(false, null, null, false);
     }
     if ((!this.py && this.isSym('[')) || (this.py && this.isSym('@'))) return this.attributes();
     this.fail(
       this.py
-        ? 'Scripts start with "when ...:" or "def name():". Put this inside one.'
-        : 'Scripts start with "when ... { }" or "void Name() { }". Put this inside one.',
+        ? 'Scripts start with an event like "@when_flag_clicked" above a "def", or a custom block "def name():". Put this inside one.'
+        : 'Scripts start with an event like "[WhenFlagClicked]" above a "void", or a custom block "void Name() { }". Put this inside one.',
     );
   }
 
   private declaration(): void {
-    while (this.isWord('cloud') || this.isWord('local') || this.isWord('global')) this.next();
-    if (!this.isWord('var') && !this.isWord('list')) this.fail('Expected "var" or "list" here');
-    this.next();
-    if (this.tok.type !== 'ident') this.fail('Expected a name for the variable');
-    this.next();
+    const found = this.scanDecl(this.p);
+    if (!found) this.fail('Expected a variable or list declaration here');
+    this.p = found.end;
     this.endStatement();
   }
 
   private attributes(): void {
     let warp = false;
     let code: string | null = null;
+    let noEvent = false;
+    let hat: { spec: BlockSpec; args: Value[]; tok: Token } | null = null;
     for (;;) {
-      if (!this.py && this.isSym('[')) {
-        this.next();
-        const name = this.tok;
-        if (name.type !== 'ident') this.fail('Expected an attribute name like Warp or Block("...")');
-        this.next();
-        if (name.text.toLowerCase() === 'warp') warp = true;
-        else if (name.text.toLowerCase() === 'block') code = this.attributeArg();
-        else this.fail('Unknown attribute. Use [Warp] or [Block("label")]', name);
-        this.expectSym(']');
-      } else if (this.py && this.isSym('@')) {
-        this.next();
-        const name = this.tok;
-        if (name.type !== 'ident') this.fail('Expected a decorator name like warp or block("...")');
-        this.next();
-        if (name.text.toLowerCase() === 'warp') warp = true;
-        else if (name.text.toLowerCase() === 'block') code = this.attributeArg();
-        else this.fail('Unknown decorator. Use @warp or @block("label")', name);
-        while (this.tok.type === 'newline') this.next();
-      } else break;
+      const bracket = !this.py && this.isSym('[');
+      const at = this.py && this.isSym('@');
+      if (!bracket && !at) break;
+      this.next();
+      const name = this.tok;
+      if (name.type !== 'ident') this.fail(this.py ? 'Expected a decorator name like @warp or @when_flag_clicked' : 'Expected an attribute name like [Warp] or [WhenFlagClicked]');
+      this.next();
+      const lower = name.text.toLowerCase().replace(/_/g, '');
+      if (lower === 'warp') warp = true;
+      else if (lower === 'block') code = this.attributeArg();
+      else if (lower === 'noevent') noEvent = true;
+      else if (lower.startsWith('when')) {
+        const spec = TABLES.hats.get(name.text.replace(/^when_?/i, '')) ?? [...TABLES.hats.values()].find((h) => h.name.replace(/_/g, '') === lower.slice(4));
+        if (!spec) this.fail(`"${name.text}" is not an event. Try ${this.py ? '@when_flag_clicked' : '[WhenFlagClicked]'}`, name);
+        const args: Value[] = this.isSym('(') ? this.argList() : [];
+        hat = { spec, args, tok: name };
+      } else if (lower === 'cloud') this.fail(`Put ${this.py ? 'Cloud[Variable]' : '[Cloud]'} on a variable, not on a script`, name);
+      else this.fail(this.py ? 'Unknown decorator. Use @warp, @block("label") or @when_...' : 'Unknown attribute. Use [Warp], [Block("label")] or [When...]', name);
+      if (bracket) this.expectSym(']');
+      else while ((this.tok.type as string) === 'newline') this.next();
     }
-    if (!((!this.py && this.isWord('void')) || (this.py && this.isWord('def')))) this.fail('Attributes go right before a custom block');
-    this.define([], warp, code);
+    if (!((!this.py && this.isWord('void')) || (this.py && this.isWord('def')))) this.fail('Attributes go right before a method');
+    this.define(warp, code, hat, noEvent);
   }
 
   private attributeArg(): string {
@@ -229,12 +281,24 @@ class Parser {
     return label;
   }
 
-  private define(_attrs: never[], warp: boolean, code: string | null = null): void {
+  /** `void Name(args) { }` / `def name(args):`. With an event attribute it is that event's script instead of a custom block. */
+  private define(warp: boolean, code: string | null, hat: { spec: BlockSpec; args: Value[]; tok: Token } | null, noEvent: boolean): void {
     this.next(); // void / def
     const nameTok = this.tok;
-    if (nameTok.type !== 'ident') this.fail('Expected a name for the custom block');
+    if (nameTok.type !== 'ident') this.fail('Expected a name');
     this.next();
     this.expectSym('(');
+    if (hat || noEvent) {
+      if (!this.isSym(')')) this.fail('Event scripts take no arguments here. Put the event\'s values in the attribute, like [WhenKeyPressed("space")]');
+      this.next();
+      const body = this.block();
+      if (hat) {
+        const head = node(hat.spec.op);
+        this.bind(head, hat.spec, hat.args, hat.tok);
+        this.scripts.push({ nodes: [head, ...body], x: 0, y: 0 });
+      } else this.scripts.push({ nodes: body, x: 0, y: 0 });
+      return;
+    }
     const names: string[] = [];
     const types: ('s' | 'b')[] = [];
     if (!this.isSym(')')) {
@@ -244,7 +308,7 @@ class Parser {
           const typeTok = this.tok;
           if (typeTok.type !== 'ident') this.fail('Expected a type (string or bool) before the argument name');
           if (typeTok.text === 'bool') type = 'b';
-          else if (!['string', 'number', 'int', 'float'].includes(typeTok.text)) this.fail('Argument types are string, number or bool', typeTok);
+          else if (!['string', 'number', 'int', 'float', 'double'].includes(typeTok.text)) this.fail('Argument types are string, number or bool', typeTok);
           this.next();
         }
         const argTok = this.tok;
@@ -394,6 +458,72 @@ class Parser {
           n.stacks.SUBSTACK = this.block();
           return n;
         }
+        case 'for': {
+          this.next();
+          const n = node('control_repeat');
+          let times: Value;
+          if (this.py) {
+            if (this.tok.type !== 'ident') this.fail('Expected a name after "for", like: for _ in range(10):');
+            this.next();
+            if (!this.isWord('in')) this.fail('Expected "in range(...)" here, like: for _ in range(10):');
+            this.next();
+            if (!this.isWord('range')) this.fail('Scratch can only repeat a number of times: for _ in range(10):');
+            this.next();
+            this.expectSym('(');
+            times = this.expression();
+            this.expectSym(')');
+          } else {
+            this.expectSym('(');
+            if (!this.isWord('int') && !this.isWord('var')) this.fail('Scratch can only repeat a number of times: for (int i = 0; i < 10; i++)');
+            this.next();
+            const counter = this.tok;
+            if (counter.type !== 'ident') this.fail('Expected a counter name, like: for (int i = 0; i < 10; i++)');
+            this.next();
+            this.expectSym('=');
+            const zero = this.tok;
+            if (zero.type !== 'num' || Number(zero.text) !== 0) this.fail('The counter has to start at 0: for (int i = 0; i < 10; i++)');
+            this.next();
+            this.expectSym(';');
+            if (!(this.tok.type === 'ident' && this.tok.text === counter.text)) this.fail(`Expected "${counter.text} < ..." here`);
+            this.next();
+            this.expectSym('<');
+            times = this.expression();
+            this.expectSym(';');
+            if (!(this.tok.type === 'ident' && this.tok.text === counter.text)) this.fail(`Expected "${counter.text}++" here`);
+            this.next();
+            this.expectSym('++');
+            this.expectSym(')');
+          }
+          if (times) n.inputs.TIMES = times;
+          n.stacks.SUBSTACK = this.block();
+          return n;
+        }
+        case 'while': {
+          this.next();
+          // while (true) / while True: is "forever"
+          const trueWord = this.py ? 'True' : 'true';
+          if ((this.isWord(trueWord) && (this.isSym(this.py ? ':' : ')', 1))) || (!this.py && this.isSym('(') && this.isWord('true', 1) && this.isSym(')', 2))) {
+            if (!this.py && this.isSym('(')) this.next();
+            this.next();
+            if (!this.py) this.expectSym(')');
+            const n = node('control_forever');
+            n.stacks.SUBSTACK = this.block();
+            return n;
+          }
+          const cond = this.condition();
+          const n = node('control_repeat_until');
+          // "while (x < 5)" runs until x < 5 is no longer true; "while (!done)" runs until done.
+          if (cond && 'node' in cond && cond.node.op === 'operator_not') {
+            const inner = cond.node.inputs.OPERAND;
+            if (inner) n.inputs.CONDITION = inner;
+          } else if (cond) {
+            const flip = node('operator_not');
+            flip.inputs.OPERAND = cond;
+            n.inputs.CONDITION = { node: flip };
+          }
+          n.stacks.SUBSTACK = this.block();
+          return n;
+        }
         case 'else':
         case 'elif':
           this.fail('"else" has to come right after the closing of an "if"');
@@ -403,8 +533,8 @@ class Parser {
     if (tok.type === 'ident' && (this.isSym('=', 1) || this.isSym('+=', 1) || this.isSym('-=', 1))) {
       const decl = this.decls.get(tok.text);
       if (this.params?.has(tok.text)) this.fail('Arguments cannot be changed', tok);
-      if (!decl) this.fail(`Unknown variable "${tok.text}". Declare it first with ${this.py ? `var ${tok.text}` : `var ${tok.text};`}`, tok);
-      if (decl.type !== 'var') this.fail(`"${tok.text}" is a list. Use ${tok.text}.${skinName('add', this.opts.skin)}(...) to change it`, tok);
+      if (!decl) this.fail(`Unknown variable "${tok.text}". Declare it first with ${this.declHint(tok.text, 'var')}`, tok);
+      if (decl.type !== 'var') this.fail(`"${tok.text}" is a list. Use ${tok.text}.${methodName(BLOCKS.find((b) => b.op === 'data_addtolist')!, this.opts.skin)}(...) to change it`, tok);
       this.next();
       const opTok = this.next();
       const value = this.expression();
@@ -601,17 +731,17 @@ class Parser {
       n.fields[decl.type === 'list' ? 'LIST' : 'VARIABLE'] = tok.text;
       return { node: n };
     }
-    this.fail(`Unknown name "${tok.text}". Declare a variable with ${this.py ? `var ${tok.text}` : `var ${tok.text};`}`, tok);
+    this.fail(`Unknown name "${tok.text}". Declare a variable with ${this.declHint(tok.text, 'var')}`, tok);
   }
 
   private method(listTok: Token): Input {
     const decl = this.decls.get(listTok.text);
-    if (!decl || decl.type !== 'list') this.fail(`"${listTok.text}" is not a list. Declare one with ${this.py ? `list ${listTok.text}` : `list ${listTok.text};`}`, listTok);
+    if (!decl || decl.type !== 'list') this.fail(`"${listTok.text}" is not a list. Declare one with ${this.declHint(listTok.text, 'list')}`, listTok);
     this.next(); // .
     const nameTok = this.tok;
     if (nameTok.type !== 'ident') this.fail('Expected a list action like Add or Length');
     const spec = TABLES.methods.get(nameTok.text);
-    if (!spec) this.fail(`Lists have no "${nameTok.text}". Try ${['add', 'remove', 'insert', 'replace', 'item', 'length', 'contains'].map((n) => skinName(n, this.opts.skin)).join(', ')}`);
+    if (!spec) this.fail(`Lists have no "${nameTok.text}". Try ${['add', 'remove', 'insert', 'replace', 'item', 'length', 'contains'].map((n) => methodName(BLOCKS.find((b) => b.name === n && b.args.some((a) => a.receiver))!, this.opts.skin)).join(', ')}`);
     this.next();
     const args = this.argList();
     const n = node(spec.op);

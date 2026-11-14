@@ -1,4 +1,4 @@
-import { BLOCKS, type BlockSpec, type Skin, skinName } from './spec';
+import { BLOCKS, type BlockSpec, type Skin, methodName, skinName } from './spec';
 
 /** What each block is called in Scratch, and what it does. "label | description" */
 const DOCS: Record<string, string> = {
@@ -122,17 +122,18 @@ const DOCS: Record<string, string> = {
 
 /** Blocks that are written with special syntax rather than a plain call. */
 export const EXTRA_DOCS: { op: string; csharp: string; python: string; label: string; desc: string; category: string }[] = [
-  { op: 'data_setvariableto', csharp: 'score = 0;', python: 'score = 0', label: 'set [score v] to (0)', desc: 'Puts a value in a variable. Declare variables at the top with var score;', category: 'Variables' },
+  { op: 'data_declare', csharp: 'public var score;\nprivate var speed;\npublic List<var> items;\n[Cloud] public var hi;', python: 'score: Variable\nspeed: Local[Variable]\nitems: List\nhi: Cloud[Variable]', label: 'Make a Variable / Make a List', desc: 'Declares variables and lists at the top. public (shared by all sprites) or private (this sprite only) in C#; Local[...] in Python. [Cloud] / Cloud[...] makes a cloud variable.', category: 'Variables' },
+  { op: 'data_setvariableto', csharp: 'score = 0;', python: 'score = 0', label: 'set [score v] to (0)', desc: 'Puts a value in a variable. Declare variables at the top: public var score; (C#) or score: Variable (Python).', category: 'Variables' },
   { op: 'data_changevariableby', csharp: 'score += 1;', python: 'score += 1', label: 'change [score v] by (1)', desc: 'Adds to a variable (use a negative number to subtract).', category: 'Variables' },
   { op: 'data_variable', csharp: 'score', python: 'score', label: '(score)', desc: 'A variable used as a value. Names with spaces go in backticks: `my variable`.', category: 'Variables' },
-  { op: 'data_listcontents', csharp: 'items', python: 'items', label: '(list)', desc: 'A whole list used as a value (declare it with list items;).', category: 'Variables' },
+  { op: 'data_listcontents', csharp: 'items', python: 'items', label: '(list)', desc: 'A whole list used as a value (declare it with public List<var> items; or items: List).', category: 'Variables' },
   { op: 'procedures_definition', csharp: 'void Jump(string height, bool high) {\n    ...\n}', python: 'def jump(height, high: bool):\n    ...', label: 'define jump (height) <high>', desc: 'Makes your own block. Add [Warp] (C#) or @warp (Python) above it for "run without screen refresh". [Block("label %s")] / @block("label %s") sets the exact Scratch label.', category: 'My Blocks' },
   { op: 'procedures_call', csharp: 'Jump(10, score > 3);', python: 'jump(10, score > 3)', label: 'jump (10) <>', desc: 'Runs one of your own blocks. Text and number slots take any value, true/false slots take a condition.', category: 'My Blocks' },
-  { op: 'control_repeat', csharp: 'repeat (10) {\n    ...\n}', python: 'repeat 10:\n    ...', label: 'repeat (10)', desc: 'Runs the lines inside a number of times.', category: 'Control' },
-  { op: 'control_forever', csharp: 'forever {\n    ...\n}', python: 'forever:\n    ...', label: 'forever', desc: 'Runs the lines inside again and again.', category: 'Control' },
+  { op: 'control_repeat', csharp: 'for (int i = 0; i < 10; i++) {\n    ...\n}', python: 'for _ in range(10):\n    ...', label: 'repeat (10)', desc: 'Runs the lines inside a number of times. Scratch has no counter, so i is only there to look like a normal loop (you cannot use it inside).', category: 'Control' },
+  { op: 'control_forever', csharp: 'while (true) {\n    ...\n}', python: 'while True:\n    ...', label: 'forever', desc: 'Runs the lines inside again and again.', category: 'Control' },
   { op: 'control_if', csharp: 'if (score > 5) {\n    ...\n}', python: 'if score > 5:\n    ...', label: 'if <> then', desc: 'Runs the lines inside only when the condition is true.', category: 'Control' },
   { op: 'control_if_else', csharp: 'if (score > 5) {\n    ...\n} else if (score > 2) {\n    ...\n} else {\n    ...\n}', python: 'if score > 5:\n    ...\nelif score > 2:\n    ...\nelse:\n    ...', label: 'if <> then ... else', desc: 'Picks between blocks. "else if" chains nest if/else blocks.', category: 'Control' },
-  { op: 'control_repeat_until', csharp: 'until (score > 9) {\n    ...\n}', python: 'until score > 9:\n    ...', label: 'repeat until <>', desc: 'Repeats the lines inside until the condition becomes true.', category: 'Control' },
+  { op: 'control_repeat_until', csharp: 'while (!MouseDown()) {\n    ...\n}', python: 'while not mouse_down():\n    ...', label: 'repeat until <>', desc: 'A while loop: it keeps going while the condition is true. "repeat until X" is written while (!X). Writing while (x < 5) gives "repeat until not <x < 5>".', category: 'Control' },
 ];
 
 export const CATEGORIES = ['Motion', 'Looks', 'Sound', 'Events', 'Control', 'Sensing', 'Operators', 'Variables', 'My Blocks'];
@@ -162,13 +163,17 @@ const split = (op: string): { label: string; desc: string } => {
 const SAMPLE: Record<string, string> = { n: '10', s: '"hello"', c: '"#ff0000"', b: 'score > 3', menu: '"_random_"', field: '"..."', bfield: '"message1"', bcast: '"message1"' };
 
 function example(spec: BlockSpec, skin: Skin): string {
-  const name = skinName(spec.name, skin);
   const recv = spec.args.find((a) => a.receiver);
+  const name = spec.args.some((a) => a.receiver) ? methodName(spec, skin) : skinName(spec.name, skin);
   const rest = spec.args.filter((a) => !a.receiver);
   const sample = (a: (typeof rest)[number]): string => (a.kind === 'var' ? 'score' : a.kind === 'list' ? 'items' : SAMPLE[a.kind] ?? '0');
   let call = `${name}(${rest.map(sample).join(', ')})`;
   if (recv) call = `items.${call}`;
-  if (spec.kind === 'H') return skin === 'csharp' ? `when ${rest.length ? call : name} {\n    ...\n}` : `when ${rest.length ? call : name}:\n    ...`;
+  if (spec.kind === 'H') {
+    const attr = skin === 'csharp' ? `When${name}` : `when_${spec.name}`;
+    const full = rest.length ? `${attr}(${rest.map(sample).join(', ')})` : attr;
+    return skin === 'csharp' ? `[${full}]\nvoid On${name}() {\n    ...\n}` : `@${full}\ndef on_${spec.name}():\n    ...`;
+  }
   if (spec.kind === 'S' || spec.kind === 'P') return skin === 'csharp' ? `${call};` : call;
   return call;
 }
@@ -197,40 +202,46 @@ export function allDocs(): Doc[] {
 /** The basics of the syntax, shown at the top of the Code Bank. */
 export const BASICS: { title: string; desc: string; csharp: string; python: string }[] = [
   {
-    title: 'Scripts',
-    desc: 'Every script starts with an event (a hat block) or a custom block definition. The lines inside run top to bottom. Leave a blank line between scripts.',
-    csharp: 'when FlagClicked {\n    Move(10);\n}',
-    python: 'when flag_clicked:\n    move(10)',
+    title: 'Scripts (events)',
+    desc: 'Every script is a method with an event on top: an attribute in C#, a decorator in Python. The lines inside run top to bottom. Leave a blank line between scripts. Blocks with no event use [NoEvent] / @no_event.',
+    csharp: '[WhenFlagClicked]\nvoid OnFlagClicked() {\n    Move(10);\n}\n\n[WhenKeyPressed("space")]\nvoid OnKeyPressed() {\n    Jump(10, true);\n}',
+    python: '@when_flag_clicked\ndef on_flag_clicked():\n    move(10)\n\n@when_key_pressed("space")\ndef on_key_pressed():\n    jump(10)',
   },
   {
     title: 'Variables and lists',
-    desc: 'Declare them at the top. "local" belongs to this sprite only, otherwise it is shared by all sprites. Use "cloud" for cloud variables. Names with spaces go in `backticks`.',
-    csharp: 'var score;\nlocal var speed;\nlist items;\nvar `my variable`;',
-    python: 'var score\nlocal var speed\nlist items\nvar `my variable`',
+    desc: 'Declare them at the top. public variables are shared by all sprites, private ones belong to this sprite (Python: Local[...]). [Cloud] / Cloud[...] makes a cloud variable. Names with spaces go in `backticks`.',
+    csharp: 'public var score;\nprivate var speed;\npublic List<var> items;\n[Cloud] public var hi;\npublic var `my variable`;',
+    python: 'score: Variable\nspeed: Local[Variable]\nitems: List\nhi: Cloud[Variable]\n`my variable`: Variable',
   },
   {
-    title: 'Changing variables',
-    desc: '= is "set to", += is "change by". Lists use methods: items.Add(x), items.Item(1), items.Length().',
-    csharp: 'score = 0;\nscore += 1;\nitems.Add(score);',
-    python: 'score = 0\nscore += 1\nitems.add(score)',
+    title: 'Changing variables and lists',
+    desc: '= is "set to", += is "change by". Lists use methods like a normal list: Add / append, Clear, Insert, RemoveAt / remove_at, ElementAt / get (counting from 1 like Scratch), Count / length, Contains.',
+    csharp: 'score = 0;\nscore += 1;\nitems.Add(score);\nSay(items.ElementAt(1));',
+    python: 'score = 0\nscore += 1\nitems.append(score)\nsay(items.get(1))',
   },
   {
     title: 'Values',
     desc: 'Numbers are written plainly, text goes in "quotes". Colours are text like "#ff0000". Sprite, costume and sound names are text too. Menu choices like "_mouse_" and "_random_" are text.',
-    csharp: 'Say("Hello", 2);\nSetSize(150);\nGoTo("_mouse_");',
+    csharp: 'SayFor("Hello", 2);\nSetSize(150);\nGoTo("_mouse_");',
     python: 'say_for("Hello", 2)\nset_size(150)\ngo_to("_mouse_")',
   },
   {
     title: 'Maths and conditions',
     desc: 'Use + - * / % for maths, == != < > <= >= to compare, and && || ! (C#) or and or not (Python) to combine true/false values. Use brackets to group.',
-    csharp: 'if (x_position > 100 && !MouseDown()) {\n    Say(score * 2 + 1);\n}',
-    python: 'if x_position > 100 and not mouse_down():\n    say(score * 2 + 1)',
+    csharp: 'if (XPosition() > 100 && !MouseDown()) {\n    Say(score * 2 + 1);\n}',
+    python: 'if x_position() > 100 and not mouse_down():\n    say(score * 2 + 1)',
   },
   {
     title: 'Loops',
-    desc: 'repeat runs a number of times, forever never stops, until repeats until the condition becomes true.',
-    csharp: 'repeat (10) { Move(5); }\nforever { TurnRight(1); }\nuntil (MouseDown()) { Wait(1); }',
-    python: 'repeat 10:\n    move(5)\nforever:\n    turn_right(1)\nuntil mouse_down():\n    wait(1)',
+    desc: 'A for loop with a count repeats that many times. while (true) is forever. while (!x) repeats until x is true (while (x) keeps going while x is true).',
+    csharp: 'for (int i = 0; i < 10; i++) {\n    Move(5);\n}\nwhile (true) {\n    TurnRight(1);\n}\nwhile (!MouseDown()) {\n    Wait(1);\n}',
+    python: 'for _ in range(10):\n    move(5)\nwhile True:\n    turn_right(1)\nwhile not mouse_down():\n    wait(1)',
+  },
+  {
+    title: 'Your own blocks',
+    desc: 'A method with no event is your own block. bool arguments take true/false values. Add [Warp] / @warp for "run without screen refresh".',
+    csharp: '[Warp]\nvoid Jump(string height, bool fast) {\n    ChangeY(height);\n}',
+    python: '@warp\ndef jump(height, fast: bool):\n    change_y(height)',
   },
   {
     title: 'Empty slots',

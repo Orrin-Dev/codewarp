@@ -210,7 +210,8 @@ for (const [op, info] of Object.entries(INFIX)) {
 export const KEYWORDS = new Set([
   'when', 'if', 'else', 'repeat', 'forever', 'until', 'var', 'list', 'local', 'global', 'cloud',
   'define', 'void', 'def', 'string', 'bool', 'true', 'false', 'and', 'or', 'not', 'warp', 'block',
-  'loose', 'pass', 'default', 'None', 'elif',
+  'loose', 'pass', 'default', 'None', 'elif', 'public', 'private', 'List', 'Variable', 'Local', 'Cloud', 'for', 'while', 'range',
+  'int', 'True', 'False', 'object', 'static', 'in',
 ]);
 
 // ---- names in each skin -------------------------------------------------------------
@@ -234,4 +235,29 @@ export function procBaseName(proccode: string): string {
     .map((w) => w.toLowerCase());
   const name = words.join('_');
   return /^[a-z_]/.test(name) ? name : `block_${name}`;
+}
+
+/** List blocks are methods. Each style names them the way its own language would. */
+const METHODS: Record<string, { csharp: string; python: string }> = {
+  add: { csharp: 'Add', python: 'append' },
+  remove: { csharp: 'RemoveAt', python: 'remove_at' },
+  clear: { csharp: 'Clear', python: 'clear' },
+  insert: { csharp: 'Insert', python: 'insert' },
+  replace: { csharp: 'ReplaceAt', python: 'replace_at' },
+  item: { csharp: 'ElementAt', python: 'get' },
+  index_of: { csharp: 'IndexOf', python: 'index' },
+  length: { csharp: 'Count', python: 'length' },
+  contains: { csharp: 'Contains', python: 'contains' },
+  show: { csharp: 'Show', python: 'show' },
+  hide: { csharp: 'Hide', python: 'hide' },
+};
+
+export function methodName(spec: BlockSpec, skin: Skin): string {
+  return METHODS[spec.name]?.[skin] ?? skinName(spec.name, skin);
+}
+
+/** Every spelling accepted for a list method. */
+export function methodSpellings(spec: BlockSpec): string[] {
+  const m = METHODS[spec.name];
+  return [...new Set([skinName(spec.name, 'csharp'), skinName(spec.name, 'python'), ...(m ? [m.csharp, m.python] : [])])];
 }

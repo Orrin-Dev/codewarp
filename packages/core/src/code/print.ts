@@ -1,4 +1,4 @@
-import { BY_OP, INFIX, KEYWORDS, NOT_PREC, type ArgSpec, type BlockSpec, type Skin, procBaseName, skinName } from './spec';
+import { BY_OP, INFIX, KEYWORDS, type ArgSpec, type BlockSpec, type Skin, methodName, procBaseName, skinName } from './spec';
 import { type Input, type Node, type Script, type VarDecl, procArgTypes } from './tree';
 
 /** One top-level thing in the text: a script, or a script the text syntax cannot express yet. */
@@ -79,7 +79,7 @@ class Printer {
     const recv = spec.args.find((a) => a.receiver);
     const rest = spec.args.filter((a) => !a.receiver);
     const args = rest.map((a) => this.argText(n, a)).join(', ');
-    const name = this.fn(spec, spec.name);
+    const name = recv ? methodName(spec, this.skin) : this.fn(spec, spec.name);
     return recv ? `${ident(n.fields[recv.name] ?? '')}.${name}(${args})` : `${name}(${args})`;
   }
 
@@ -160,15 +160,27 @@ class Printer {
       case 'procedures_call':
         this.line(depth, this.end(this.procCall(n)));
         return;
-      case 'control_repeat':
-        this.block(depth, `repeat ${this.cs ? `(${this.input(n.inputs.TIMES, BY_OP.get(n.op)!.args[0])})` : this.input(n.inputs.TIMES, BY_OP.get(n.op)!.args[0])}`, n.stacks.SUBSTACK ?? []);
+      case 'control_repeat': {
+        const times = this.input(n.inputs.TIMES, BY_OP.get(n.op)!.args[0]);
+        this.block(depth, this.cs ? `for (int i = 0; i < ${times}; i++)` : `for _ in range(${times})`, n.stacks.SUBSTACK ?? []);
         return;
+      }
       case 'control_forever':
-        this.block(depth, 'forever', n.stacks.SUBSTACK ?? []);
+        this.block(depth, this.cs ? 'while (true)' : 'while True', n.stacks.SUBSTACK ?? []);
         return;
-      case 'control_repeat_until':
-        this.block(depth, `until ${this.cs ? `(${this.input(n.inputs.CONDITION, undefined)})` : this.input(n.inputs.CONDITION, undefined)}`, n.stacks.SUBSTACK ?? []);
+      case 'control_repeat_until': {
+        // repeat until X  =  while (!X)   and   repeat until (not Y)  =  while (Y)
+        const cond = n.inputs.CONDITION;
+        let text: string;
+        if (cond && 'node' in cond && cond.node.op === 'operator_not' && cond.node.inputs.OPERAND) text = this.input(cond.node.inputs.OPERAND, undefined);
+        else {
+          const raw = this.input(cond, undefined);
+          const wrap = cond && 'node' in cond && !!INFIX[cond.node.op];
+          text = `${this.cs ? '!' : 'not '}${wrap ? `(${raw})` : raw}`;
+        }
+        this.block(depth, this.cs ? `while (${text})` : `while ${text}`, n.stacks.SUBSTACK ?? []);
         return;
+      }
       case 'control_if':
       case 'control_if_else':
         this.ifChain(depth, n, true);
@@ -204,7 +216,7 @@ class Printer {
 
   // ---- scripts ----
 
-  script(s: Script): void {
+  script(s: Script, suffix = ''): void {
     const [head, ...rest] = s.nodes;
     if (!head) return;
     if (head.op === 'procedures_definition') {
@@ -214,13 +226,16 @@ class Printer {
     const spec = BY_OP.get(head.op);
     if (spec?.kind === 'H') {
       const args = spec.args.map((a) => this.argText(head, a)).join(', ');
-      const name = this.fn(spec, spec.name);
-      const call = spec.args.length > 0 ? `${name}(${args})` : name;
-      this.block(0, `when ${call}`, rest);
+      const attr = this.cs ? `When${skinName(spec.name, 'csharp')}` : `when_${spec.name}`;
+      const call = spec.args.length > 0 ? `${attr}(${args})` : attr;
+      this.line(0, this.cs ? `[${call}]` : `@${call}`);
+      const method = this.cs ? `On${skinName(spec.name, 'csharp')}${suffix}` : `on_${spec.name}${suffix}`;
+      this.block(0, this.cs ? `void ${method}()` : `def ${method}()`, rest);
       return;
     }
-    // A loose stack with no hat: written as a block with no event.
-    this.block(0, 'loose', s.nodes);
+    // A loose stack with no event.
+    this.line(0, this.cs ? '[NoEvent]' : '@no_event');
+    this.block(0, this.cs ? `void Loose${suffix}()` : `def loose${suffix}()`, s.nodes);
   }
 
   private define(head: Node, body: Node[]): void {
@@ -237,24 +252,33 @@ class Printer {
   }
 }
 
-export function printScript(script: Script, skin: Skin): string {
+export function printScript(script: Script, skin: Skin, suffix = ''): string {
   const p = new Printer(skin);
-  p.script(script);
+  p.script(script, suffix);
   return p.out();
 }
 
 export function printDecl(d: VarDecl, skin: Skin): string {
-  const words = [d.cloud ? 'cloud' : '', d.local ? 'local' : '', d.type === 'list' ? 'list' : 'var', ident(d.name)].filter(Boolean).join(' ');
-  return skin === 'csharp' ? `${words};` : words;
+  const name = ident(d.name);
+  if (skin === 'csharp') {
+    return `${d.cloud ? '[Cloud] ' : ''}${d.local && !d.cloud ? 'private' : 'public'} ${d.type === 'list' ? 'List<var>' : 'var'} ${name};`;
+  }
+  const type = d.type === 'list' ? 'List' : 'Variable';
+  return `${name}: ${d.cloud ? `Cloud[${type}]` : d.local ? `Local[${type}]` : type}`;
 }
 
 /** The whole text for one sprite: variable declarations, then every script. */
 export function printItems(items: Item[], decls: VarDecl[], skin: Skin): string {
   const chunks: string[] = [];
   if (decls.length > 0) chunks.push(decls.map((d) => printDecl(d, skin)).join('\n'));
+  const used = new Map<string, number>();
   for (const item of items) {
-    if ('script' in item) chunks.push(printScript(item.script, skin));
-    else chunks.push(`${skin === 'csharp' ? '//' : '#'} kept: ${item.kept.id} (${item.kept.label})`);
+    if ('script' in item) {
+      const first = printScript(item.script, skin).split('\n').find((l) => /^(void|def) /.test(l)) ?? '';
+      const n = (used.get(first) ?? 0) + 1;
+      used.set(first, n);
+      chunks.push(printScript(item.script, skin, n > 1 ? String(n) : ''));
+    } else chunks.push(`${skin === 'csharp' ? '//' : '#'} kept: ${item.kept.id} (${item.kept.label})`);
   }
   return chunks.join('\n\n') + '\n';
 }

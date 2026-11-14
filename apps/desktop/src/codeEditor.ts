@@ -122,11 +122,13 @@ export class CodeEditor {
   /** Variables and lists named in the text (read straight from it, so new ones are known as soon as they are typed). */
   private declaredNames(): Map<string, 'var' | 'list'> {
     const out = new Map<string, 'var' | 'list'>();
-    const re = /^[ \t]*(?:(?:cloud|local|global)[ \t]+)*(var|list)[ \t]+(`[^`\n]+`|[\p{L}_][\p{L}\p{N}_]*)/gmu;
-    for (let m = re.exec(this.input.value); m; m = re.exec(this.input.value)) {
-      const name = m[2].startsWith('`') ? m[2].slice(1, -1) : m[2];
-      out.set(name, m[1] as 'var' | 'list');
-    }
+    const text = this.input.value;
+    const add = (raw: string, kind: 'var' | 'list') => out.set(raw.startsWith('`') ? raw.slice(1, -1) : raw, kind);
+    const id = '(`[^`\\n]+`|[\\p{L}_][\\p{L}\\p{N}_]*)';
+    // C#: [Cloud] public var x;  private var x;  public List<var> items;   (older: var x; list items;)
+    for (const m of text.matchAll(new RegExp(`^[ \\t]*(?:\\[Cloud\\][ \\t]*)?(?:(?:public|private|cloud|local|global)[ \\t]+)*(?:(var)|(list)|List<[^>\\n]*>)[ \\t]+${id}`, 'gmu'))) add(m[3], m[2] || m[0].includes('List<') ? 'list' : 'var');
+    // Python: x: Variable   x: Local[Variable]   items: List
+    for (const m of text.matchAll(new RegExp(`^${id}[ \\t]*:[ \\t]*(?:(?:Local|Cloud)\\[[ \\t]*)?(Variable|List)\\b`, 'gmu'))) add(m[1], m[2] === 'List' ? 'list' : 'var');
     return out;
   }
 
@@ -318,7 +320,9 @@ export class CodeEditor {
       else if (m[5]) {
         const word = m[5];
         const after = line.slice(m.index + word.length).trimStart();
-        if (KEYWORDS.has(word)) cls = 'k';
+        const before = line[m.index - 1];
+        if ((before === '[' && !py) || before === '@') cls = 'a';
+        else if (KEYWORDS.has(word)) cls = 'k';
         else if (this.declared.has(word)) cls = 'v';
         else if (BLOCK_NAMES.has(word) || after.startsWith('(')) cls = 'f';
       }
