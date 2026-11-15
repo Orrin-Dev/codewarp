@@ -266,7 +266,7 @@ function boot(): void {
 
   const blocksHost = $('blocks-host');
   const textHost = $('text-host');
-  const codeEditor = new CodeEditor(textHost, host.vm, editor);
+  const codeEditor = new CodeEditor(textHost, host.vm, editor, collab.text);
   const modeBlocks = $('mode-blocks');
   const modeText = $('mode-text');
 

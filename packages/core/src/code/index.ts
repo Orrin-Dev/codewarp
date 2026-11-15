@@ -6,3 +6,4 @@ export * from './vmBlocks';
 export * from './xml';
 export * from './docs';
 export * from './suggest';
+export * from './convert';

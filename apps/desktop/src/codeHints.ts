@@ -1,3 +1,4 @@
+import { visualColumn } from './codeGeometry';
 import { BLOCKS, KEYWORDS, type ArgSpec, type BlockSpec, type Skin, allDocs, matchScore, methodName, skinName } from '@codewarp/core';
 
 /*
@@ -51,35 +52,35 @@ const FIELD_VALUES: Record<string, string[]> = {
 
 const SNIPPETS: Record<Skin, Record<string, { text: string; detail: string }>> = {
   csharp: {
-    when: { text: '[When$0]\nvoid On() {\n    \n}', detail: 'start a script' },
-    if: { text: 'if ($0) {\n    \n}', detail: 'if <> then' },
-    else: { text: 'else {\n    $0\n}', detail: 'else part' },
-    for: { text: 'for (int i = 0; i < $0; i++) {\n    \n}', detail: 'repeat (10)' },
-    while: { text: 'while ($0) {\n    \n}', detail: 'repeat until not <>' },
-    forever: { text: 'while (true) {\n    $0\n}', detail: 'forever' },
-    until: { text: 'while (!$0) {\n    \n}', detail: 'repeat until <>' },
+    when: { text: '[When$0]\nvoid On() {\n\t\n}', detail: 'start a script' },
+    if: { text: 'if ($0) {\n\t\n}', detail: 'if <> then' },
+    else: { text: 'else {\n\t$0\n}', detail: 'else part' },
+    for: { text: 'for (int i = 0; i < $0; i++) {\n\t\n}', detail: 'repeat (10)' },
+    while: { text: 'while ($0) {\n\t\n}', detail: 'repeat until not <>' },
+    forever: { text: 'while (true) {\n\t$0\n}', detail: 'forever' },
+    until: { text: 'while (!$0) {\n\t\n}', detail: 'repeat until <>' },
     public: { text: 'public var $0;', detail: 'variable for all sprites' },
     private: { text: 'private var $0;', detail: 'variable for this sprite only' },
     list: { text: 'public List<var> $0;', detail: 'declare a list' },
-    void: { text: 'void $0() {\n    \n}', detail: 'define your own block' },
+    void: { text: 'void $0() {\n\t\n}', detail: 'define your own block' },
     cloud: { text: '[Cloud] public var $0;', detail: 'cloud variable' },
-    loose: { text: '[NoEvent]\nvoid Loose() {\n    $0\n}', detail: 'blocks with no event' },
+    loose: { text: '[NoEvent]\nvoid Loose() {\n\t$0\n}', detail: 'blocks with no event' },
   },
   python: {
-    when: { text: '@when_$0\ndef on_():\n    ', detail: 'start a script' },
-    if: { text: 'if $0:\n    ', detail: 'if <> then' },
-    elif: { text: 'elif $0:\n    ', detail: 'else if' },
-    else: { text: 'else:\n    $0', detail: 'else part' },
-    for: { text: 'for _ in range($0):\n    ', detail: 'repeat (10)' },
-    while: { text: 'while $0:\n    ', detail: 'repeat until not <>' },
-    forever: { text: 'while True:\n    $0', detail: 'forever' },
-    until: { text: 'while not $0:\n    ', detail: 'repeat until <>' },
+    when: { text: '@when_$0\ndef on_():\n\t', detail: 'start a script' },
+    if: { text: 'if $0:\n\t', detail: 'if <> then' },
+    elif: { text: 'elif $0:\n\t', detail: 'else if' },
+    else: { text: 'else:\n\t$0', detail: 'else part' },
+    for: { text: 'for _ in range($0):\n\t', detail: 'repeat (10)' },
+    while: { text: 'while $0:\n\t', detail: 'repeat until not <>' },
+    forever: { text: 'while True:\n\t$0', detail: 'forever' },
+    until: { text: 'while not $0:\n\t', detail: 'repeat until <>' },
     list: { text: '$0: List', detail: 'declare a list' },
     variable: { text: '$0: Variable', detail: 'declare a variable' },
     local: { text: '$0: Local[Variable]', detail: 'variable for this sprite only' },
     cloud: { text: '$0: Cloud[Variable]', detail: 'cloud variable' },
-    def: { text: 'def $0():\n    ', detail: 'define your own block' },
-    loose: { text: '@no_event\ndef loose():\n    $0', detail: 'blocks with no event' },
+    def: { text: 'def $0():\n\t', detail: 'define your own block' },
+    loose: { text: '@no_event\ndef loose():\n\t$0', detail: 'blocks with no event' },
   },
 };
 
@@ -189,15 +190,19 @@ export class CodeHints {
     if (!item || !ctx) return;
     this.input.focus();
     this.input.setSelectionRange(ctx.from, ctx.to);
-    const marker = item.insert.indexOf('$0');
+    // Lines after the first line up with the line the snippet goes on.
+    const value = this.input.value;
+    const indent = /^[ \t]*/.exec(value.slice(value.lastIndexOf('\n', ctx.from - 1) + 1))![0];
+    const insert = indent ? item.insert.replace(/\n/g, `\n${indent}`) : item.insert;
+    const marker = insert.indexOf('$0');
     if (marker >= 0) {
-      const text = item.insert.replace('$0', '');
+      const text = insert.replace('$0', '');
       document.execCommand('insertText', false, text);
       const at = ctx.from + marker;
       this.input.setSelectionRange(at, at);
     } else {
-      document.execCommand('insertText', false, item.insert);
-      const at = ctx.from + item.insert.length - item.back;
+      document.execCommand('insertText', false, insert);
+      const at = ctx.from + insert.length - item.back;
       this.input.setSelectionRange(at, at);
     }
     this.hide();
@@ -453,7 +458,7 @@ export class CodeHints {
     const { selectionStart: caret, value } = this.input;
     const before = value.slice(0, caret);
     const line = before.split('\n').length - 1;
-    const col = before.length - (before.lastIndexOf('\n') + 1);
+    const col = visualColumn(before.slice(before.lastIndexOf('\n') + 1));
     return { x: this.metrics.padLeft + col * this.metrics.char, y: this.metrics.padTop + line * this.metrics.line };
   }
 

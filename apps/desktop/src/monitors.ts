@@ -49,9 +49,52 @@ function formatValue(value: unknown): string {
   return value === undefined || value === null ? '' : String(value);
 }
 
+const MAX_LIST_ROWS = 300;
+
 export class MonitorOverlay {
   constructor(private readonly layer: HTMLElement, vm: any) {
     vm.addListener('MONITORS_UPDATE', (monitors: any) => this.render(monitors));
+  }
+
+  /** A list monitor: a title, numbered rows in a scrolling box, and the length at the bottom (like Scratch). */
+  private fillList(box: HTMLElement, monitor: any): void {
+    const width = Number(field(monitor, 'width')) || 0;
+    const height = Number(field(monitor, 'height')) || 0;
+    box.style.width = `${width >= 60 ? width : 110}px`;
+    box.style.height = `${height >= 60 ? height : 130}px`;
+
+    const title = document.createElement('div');
+    title.className = 'cw-list-title';
+    title.textContent = monitorLabel(monitor);
+
+    const rows = document.createElement('div');
+    rows.className = 'cw-list-rows';
+    const value = field(monitor, 'value');
+    const items: unknown[] = Array.isArray(value) ? value : [];
+    const shown = Math.min(items.length, MAX_LIST_ROWS);
+    for (let i = 0; i < shown; i++) {
+      const row = document.createElement('div');
+      row.className = 'cw-list-row';
+      const index = document.createElement('span');
+      index.className = 'cw-list-index';
+      index.textContent = String(i + 1);
+      const item = document.createElement('span');
+      item.className = 'cw-list-item';
+      item.textContent = formatValue(items[i]);
+      row.append(index, item);
+      rows.appendChild(row);
+    }
+    if (items.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'cw-list-empty';
+      empty.textContent = '(empty)';
+      rows.appendChild(empty);
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'cw-list-footer';
+    footer.textContent = `length ${items.length}`;
+    box.append(title, rows, footer);
   }
 
   private render(monitors: any): void {
@@ -76,7 +119,13 @@ export class MonitorOverlay {
       box.style.top = `${typeof y === 'number' ? y : 5 + autoIndex * 28}px`;
       if (typeof x !== 'number' || typeof y !== 'number') autoIndex++;
 
-      if (mode !== 'large' || isList) {
+      if (isList) {
+        this.fillList(box, monitor);
+        this.layer.appendChild(box);
+        continue;
+      }
+
+      if (mode !== 'large') {
         const label = document.createElement('span');
         label.className = 'cw-monitor-label';
         label.textContent = monitorLabel(monitor);

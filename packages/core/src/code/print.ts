@@ -54,7 +54,7 @@ class Printer {
   }
 
   line(depth: number, text: string): void {
-    this.lines.push(text === '' ? '' : '    '.repeat(depth) + text);
+    this.lines.push(text === '' ? '' : '\t'.repeat(depth) + text);
   }
 
   // ---- expressions ----

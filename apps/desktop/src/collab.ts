@@ -8,6 +8,7 @@ import { StateSync, fromBase64, toBase64 } from './stateSync';
 import { LiveRun } from './liveRun';
 import { collabServerUrl } from './collabConfig';
 import { compareDigests } from './syncModel';
+import { TextHub, type TextTransport } from './codeSession';
 
 export type CollabState = 'offline' | 'connecting' | 'syncing' | 'live' | 'reconnecting';
 
@@ -72,6 +73,19 @@ export class Collab {
   hostId = '';
   runnerId = '';
   readonly peers = new Map<string, Peer>();
+  /** The shared code editors (typing in text mode is shared through this). */
+  readonly text = new TextHub();
+  private readonly textTransport: TextTransport = {
+    myId: () => this.me?.id ?? null,
+    live: () => this.state === 'live',
+    peerIds: () => [...this.peers.keys()],
+    peerInfo: (id) => this.peers.get(id),
+    sendOps: (ops) => {
+      this.touch();
+      for (const op of ops) this.enqueue(op);
+    },
+    sendCursor: (target, x, y) => this.send({ t: 'cursor', target, x, y }),
+  };
 
   private readonly stateSync: StateSync;
   private readonly liveRun: LiveRun;
@@ -88,7 +102,7 @@ export class Collab {
   private lastActivity = 0;
   private queue: Op[] = [];
   private flushTimer: number | undefined;
-  private buffered: { seq: number; ops: Op[] }[] = [];
+  private buffered: { seq: number; from: string; ops: Op[] }[] = [];
   private download: Activity | null = null;
   private snapshotTimer: number | undefined;
   private incoming: { id: string; total: number; parts: Uint8Array[]; got: number; shown: number } | null = null;
@@ -320,6 +334,7 @@ export class Collab {
     this.queue = [];
     this.stopEdits?.();
     this.stopEdits = null;
+    this.text.detach();
     this.stateSync.stop();
     window.removeEventListener('pointermove', this.pointerHandler, true);
     window.removeEventListener('blur', this.leaveHandler);
@@ -375,6 +390,7 @@ export class Collab {
         this.cursors.get(msg.id)?.el.remove();
         this.cursors.delete(msg.id);
         this.editor.clearRemote(msg.id);
+        this.text.peerLeft(msg.id);
         if (peer) this.events.onMessage(`${peer.name} left`);
         this.events.onChange();
         break;
@@ -390,13 +406,17 @@ export class Collab {
         break;
       case 'ops':
         this.lastSeq = Math.max(this.lastSeq, msg.seq);
-        if (this.state === 'live') this.applyOps(msg.ops);
-        else if (this.state === 'syncing') this.buffered.push({ seq: msg.seq, ops: msg.ops });
+        if (this.state === 'live') this.applyOps(msg.ops, msg.from);
+        else if (this.state === 'syncing') this.buffered.push({ seq: msg.seq, from: msg.from, ops: msg.ops });
         break;
       case 'ack':
         this.lastSeq = Math.max(this.lastSeq, msg.seq);
         break;
       case 'cursor':
+        if (msg.target.startsWith('@text')) {
+          if (this.state === 'live') this.text.cursor(msg.from, msg.target, msg.x, msg.y);
+          break;
+        }
         this.showCursor(msg.from, msg.target, msg.x, msg.y);
         break;
       case 'select': {
@@ -583,7 +603,7 @@ export class Collab {
     const pending = this.buffered.filter((b) => b.seq > seq).sort((a, b) => a.seq - b.seq);
     this.buffered = [];
     this.goLive();
-    for (const batch of pending) this.applyOps(batch.ops);
+    for (const batch of pending) this.applyOps(batch.ops, batch.from);
   }
 
   private goLive(): void {
@@ -591,6 +611,7 @@ export class Collab {
     this.setState('live');
     this.touch();
     this.stateSync.start();
+    this.text.attach(this.textTransport);
     this.stopEdits = this.editor.onLocalEdit((edit) => this.localEdit(edit));
     // The mouse is shown wherever it is in the app, and hidden when it leaves or the app loses focus.
     window.addEventListener('pointermove', this.pointerHandler, true);
@@ -631,9 +652,12 @@ export class Collab {
     if (ops.length) this.send({ t: 'ops', ops });
   }
 
-  private applyOps(ops: Op[]): void {
+  private applyOps(ops: Op[], from: string): void {
     this.touch();
-    for (const op of ops) void this.stateSync.apply(op);
+    for (const op of ops) {
+      if (op.k.startsWith('text')) this.text.receive(from, op);
+      else void this.stateSync.apply(op);
+    }
   }
 
   // ---- keeping in step ----------------------------------------------------------------

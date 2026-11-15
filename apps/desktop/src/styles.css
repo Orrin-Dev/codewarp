@@ -245,8 +245,14 @@ button.active { background: var(--accent); border-color: var(--accent); color: #
   color: #fff;
 }
 .cw-monitor-large .cw-monitor-value { font-size: 20px; padding: 2px 10px; }
-.cw-monitor-list { flex-direction: column; align-items: stretch; max-height: 140px; overflow: auto; }
-.cw-monitor-list .cw-monitor-value { text-align: left; white-space: pre-wrap; background: #fc662c; }
+.cw-monitor-list { flex-direction: column; align-items: stretch; gap: 0; padding: 0; overflow: hidden; box-sizing: border-box; }
+.cw-list-title { flex: none; padding: 3px 6px; text-align: center; font-size: 12px; font-weight: 700; border-bottom: 1px solid #b4c6e6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cw-list-rows { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; background: #fff; padding: 2px 0; }
+.cw-list-row { display: flex; align-items: center; gap: 4px; padding: 1px 4px; }
+.cw-list-index { flex: none; min-width: 14px; text-align: right; font-size: 10px; font-weight: 600; color: #8a96ad; }
+.cw-list-item { flex: 1 1 auto; min-width: 0; padding: 1px 6px; border-radius: 3px; background: #fc662c; color: #fff; font-size: 12px; font-weight: 600; line-height: 16px; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
+.cw-list-empty { padding: 6px; text-align: center; color: #8a96ad; font-size: 11px; font-weight: 500; }
+.cw-list-footer { flex: none; padding: 2px 6px; font-size: 11px; font-weight: 600; border-top: 1px solid #b4c6e6; text-align: center; }
 
 .add-buttons { display: flex; gap: 6px; }
 .sprite-props {
@@ -898,3 +904,35 @@ button.active { background: var(--accent); border-color: var(--accent); box-shad
 /* keep the accent glow on active toggles */
 button.active { box-shadow: 0 4px 14px var(--accent-mid); }
 .mode-toggle button.active, .cw-seg button.active { box-shadow: 0 2px 10px var(--accent-mid); }
+
+/* ---- shared code editor: other people's cursors, inline problems, tabs ---- */
+.cw-code-text { tab-size: 4; -moz-tab-size: 4; }
+.cw-t-msg { margin-left: 3ch; padding: 0 8px; border-radius: 4px; color: #ff9c9c; background: color-mix(in srgb, var(--bad) 14%, transparent); font: italic 12px/18px system-ui, -apple-system, 'Segoe UI', sans-serif; user-select: none; }
+.cw-t-msg::before { content: '\26A0\FE0E  '; font-style: normal; }
+.cw-rcarets { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 3; pointer-events: none; }
+.cw-rsel { position: absolute; background: color-mix(in srgb, var(--cursor-color, var(--accent)) 28%, transparent); border-radius: 2px; }
+.cw-rcaret { position: absolute; width: 2px; margin-left: -1px; background: var(--cursor-color, var(--accent)); border-radius: 1px; transition: left 0.08s linear, top 0.08s linear; }
+.cw-rcaret-label { position: absolute; left: -1px; bottom: 100%; padding: 1px 6px; border-radius: 4px 4px 4px 0; background: var(--cursor-color, var(--accent)); color: #fff; font: 600 11px/15px system-ui, -apple-system, 'Segoe UI', sans-serif; white-space: nowrap; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3); }
+.cw-rcaret-label.cw-below { bottom: auto; top: 100%; border-radius: 0 4px 4px 4px; }
+.cw-code-people { display: flex; gap: 6px; align-items: center; }
+.cw-code-person { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 6px; border-radius: 999px; font-size: 12px; border: 1px solid var(--cursor-color, var(--border)); background: color-mix(in srgb, var(--cursor-color, var(--accent)) 14%, transparent); }
+.cw-code-person::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--cursor-color, var(--accent)); }
+.cw-code-input[readonly] { cursor: progress; }
+.cw-bank-code { tab-size: 4; }
+
+/* problems list under the code editor: easy to read */
+.cw-code-errors { max-height: 34%; min-height: 0; flex: none; padding: 4px 0; background: color-mix(in srgb, var(--bad) 8%, var(--panel)); }
+.cw-code-error { padding: 7px 16px 7px 14px; font: 13px/1.45 ui-monospace, 'JetBrains Mono', Consolas, monospace; border-left: 3px solid var(--bad); white-space: normal; }
+.cw-code-error + .cw-code-error { margin-top: 1px; }
+.cw-code-error b { color: #fff; font-weight: 700; margin-right: 6px; }
+.cw-rcaret-label { transition: opacity 0.25s, transform 0.25s; transform-origin: left bottom; }
+.cw-rcaret-label.cw-idle { opacity: 0; transform: scale(0.8); }
+.cw-rcaret:hover .cw-rcaret-label.cw-idle { opacity: 1; transform: none; }
+
+/* the real Codewarp logo in the top bar */
+.brand::before {
+  width: 26px; height: 26px; border-radius: 0;
+  background: url('./logo.svg') center / contain no-repeat;
+  box-shadow: none;
+  filter: drop-shadow(0 2px 6px var(--accent-mid));
+}

@@ -1,12 +1,15 @@
-import { BLOCKS, KEYWORDS, type ParseError, type Skin, parse, skinName } from '@codewarp/core';
+import { BLOCKS, KEYWORDS, type ParseError, type Skin, type TextChange, convertText, diffText, mapOffset, parse, skinName } from '@codewarp/core';
 import type { BlocksEditor } from './blocksEditor';
 import { applyParsed, externalProcs, generate, type Snapshot } from './codeBridge';
 import { getCodeSkin, saveCodeSkin } from './settings';
 import { logDiag } from './diagnostics';
 import { CodeHints } from './codeHints';
 import { CodeBank } from './codeBank';
+import { type TextHub, type TextSession } from './codeSession';
+import { lineAndColumn, measureMetrics, visualColumn, type Metrics } from './codeGeometry';
 
 const APPLY_DELAY_MS = 450;
+const CARET_LABEL_MS = 3000;
 const REFRESH_DELAY_MS = 250;
 
 const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -20,6 +23,13 @@ interface Piece {
 }
 
 /** Text mode: write scripts as C#-style or Python-style code. The text and the blocks stay the same project. */
+/** What the editor needs to read and change the blocks. (A test can give it a pretend set of blocks.) */
+export interface CodeBridge {
+  generate: typeof generate;
+  applyParsed: typeof applyParsed;
+  externalProcs: typeof externalProcs;
+}
+
 export class CodeEditor {
   private readonly root = document.createElement('div');
   private readonly input = document.createElement('textarea');
@@ -43,14 +53,29 @@ export class CodeEditor {
   private applyTimer: number | undefined;
   private refreshTimer: number | undefined;
 
+  private session: TextSession | null = null;
+  private inner!: HTMLElement;
+  private readonly caretLayer = document.createElement('div');
+  private readonly peopleEl = document.createElement('div');
+  private metrics: Metrics | null = null;
+  private caretFrame = 0;
+  private caretSeen = new Map<string, { key: string; since: number }>();
+  private caretIdleTimer: number | undefined;
+
   constructor(
     private readonly host: HTMLElement,
     private readonly vm: any,
     private readonly editor: BlocksEditor,
+    private readonly hub: TextHub,
+    private readonly bridge: CodeBridge = { generate, applyParsed, externalProcs },
   ) {
     this.build();
     this.editor.onBlocksChanged(() => this.blocksChanged());
     this.vm.addListener('workspaceUpdate', () => this.targetMaybeChanged());
+    document.addEventListener('selectionchange', () => {
+      if (document.activeElement === this.input) this.caretMoved();
+    });
+    window.addEventListener('resize', () => this.drawCarets());
   }
 
   // ---- layout ----
@@ -67,7 +92,7 @@ export class CodeEditor {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = label;
-      b.addEventListener('click', () => void this.setSkin(skin));
+      b.addEventListener('click', () => this.setSkin(skin));
       this.skinButtons.set(skin, b);
       seg.appendChild(b);
     }
@@ -80,7 +105,8 @@ export class CodeEditor {
     this.bankButton.addEventListener('click', () => {
       this.bankButton.classList.toggle('active', this.bank.toggle());
     });
-    bar.append(seg, this.statusEl, this.bankButton);
+    this.peopleEl.className = 'cw-code-people';
+    bar.append(seg, this.statusEl, this.peopleEl, this.bankButton);
 
     const body = document.createElement('div');
     body.className = 'cw-code-body';
@@ -94,7 +120,10 @@ export class CodeEditor {
     this.input.setAttribute('wrap', 'off');
     this.input.setAttribute('autocapitalize', 'off');
     this.input.setAttribute('autocomplete', 'off');
-    inner.append(this.gutter, this.highlight, this.input);
+    this.caretLayer.className = 'cw-rcarets';
+    this.caretLayer.setAttribute('aria-hidden', 'true');
+    inner.append(this.gutter, this.highlight, this.input, this.caretLayer);
+    this.inner = inner;
     body.appendChild(inner);
     const main = document.createElement('div');
     main.className = 'cw-code-main';
@@ -107,9 +136,7 @@ export class CodeEditor {
 
     this.input.addEventListener('input', () => this.typed());
     this.input.addEventListener('keydown', (e) => this.keydown(e));
-    this.input.addEventListener('blur', () => {
-      if (!this.dirty) this.refresh(true);
-    });
+    this.input.addEventListener('focus', () => this.caretMoved());
     this.hints = new CodeHints(this.input, inner, {
       skin: () => this.skin,
       vm: () => this.vm,
@@ -135,13 +162,14 @@ export class CodeEditor {
   /** Put code from the Code Bank at the cursor, on its own line, indented to match. */
   private insertCode(code: string, inline: boolean): void {
     const input = this.input;
+    if (input.readOnly) return;
     input.focus();
     const { selectionStart: a, value } = input;
     const lineStart = value.lastIndexOf('\n', a - 1) + 1;
     const before = value.slice(lineStart, a);
-    const indent = /^ */.exec(before)![0];
+    const indent = /^[ \t]*/.exec(before)![0];
     const body = code
-      .replace(/^[ ]*\.\.\.[ ]*$/gm, '')
+      .replace(/^[ \t]*\.\.\.[ \t]*$/gm, '')
       .split('\n')
       .map((l, i) => (i === 0 ? l : indent + l))
       .join('\n');
@@ -161,14 +189,17 @@ export class CodeEditor {
     this.shown = true;
     this.root.hidden = false;
     this.targetId = this.vm.editingTarget?.id ?? '';
-    this.refresh(true);
+    this.metrics = measureMetrics(this.input, this.inner);
+    this.openSession();
     this.input.focus();
   }
 
   hide(): void {
     if (!this.shown) return;
     window.clearTimeout(this.applyTimer);
-    if (this.dirty) this.applyNow();
+    window.clearTimeout(this.refreshTimer);
+    if (this.dirty && this.session?.ready && this.session.leader) this.applyNow();
+    this.closeSession();
     this.shown = false;
     this.root.hidden = true;
   }
@@ -177,11 +208,206 @@ export class CodeEditor {
     return this.shown;
   }
 
+  // ---- the shared text ----
+
+  /** Start (or join) the shared text for the sprite being edited. */
+  private openSession(): void {
+    this.closeSession();
+    const sprite: string | undefined = this.vm.editingTarget?.getName?.();
+    if (!sprite) return;
+    this.dirty = false;
+    this.errors = [];
+    this.input.readOnly = true;
+    this.setStatus('busy', 'Getting the shared text…');
+    const session = this.hub.open(sprite, this.skin, () => this.seedText(), {
+      ready: () => this.sessionReady(),
+      changed: (changes, from) => this.remoteChanged(changes, from),
+      skin: (skin) => this.remoteSkin(skin),
+      leader: (isLeader) => this.leaderChanged(isLeader),
+      carets: () => {
+        this.updatePeople();
+        this.drawCarets();
+      },
+    });
+    this.session = session;
+    session.start();
+  }
+
+  private closeSession(): void {
+    this.session?.close();
+    this.session = null;
+    this.caretLayer.replaceChildren();
+    this.peopleEl.replaceChildren();
+  }
+
+  /** What the text starts as when nobody else has it open: the blocks, written as code. */
+  private seedText(): string {
+    try {
+      return this.bridge.generate(this.vm, this.skin).text;
+    } catch (error) {
+      console.error('Could not write the blocks as text', error);
+      logDiag('code', 'generate failed', String(error));
+      return '';
+    }
+  }
+
+  private sessionReady(): void {
+    const session = this.session;
+    if (!session) return;
+    this.input.readOnly = false;
+    this.skin = session.skin as Skin;
+    this.updateSkinButtons();
+    this.bank.setSkin(this.skin);
+    try {
+      this.snapshot = this.bridge.generate(this.vm, this.skin);
+    } catch (error) {
+      console.error('Could not write the blocks as text', error);
+      logDiag('code', 'generate failed', String(error));
+      this.snapshot = { text: '', base: [], keptIds: [] };
+    }
+    this.input.value = session.text();
+    this.dirty = this.input.value !== this.snapshot.text;
+    this.errors = [];
+    this.render();
+    this.showErrors();
+    this.updatePeople();
+    this.drawCarets();
+    this.caretMoved();
+    if (this.dirty) this.scheduleApply();
+    else this.setStatus('ok', 'Matches the blocks');
+  }
+
+  /** Other people's typing arrived: put it in the text box without moving what you are doing. */
+  private remoteChanged(changes: TextChange[], _from: string | null): void {
+    if (changes.length === 0) return;
+    const input = this.input;
+    let value = input.value;
+    let a = input.selectionStart;
+    let b = input.selectionEnd;
+    for (const c of changes) {
+      value = value.slice(0, c.pos) + c.ins + value.slice(c.pos + c.del);
+      a = mapOffset(a, c);
+      b = mapOffset(b, c);
+    }
+    if (value !== input.value) {
+      const backward = input.selectionDirection === 'backward';
+      input.value = value;
+      input.setSelectionRange(a, b, backward ? 'backward' : 'forward');
+    }
+    this.hints.hide();
+    this.afterTextChange();
+    this.drawCarets();
+  }
+
+  private remoteSkin(skin: string): void {
+    if (skin !== 'csharp' && skin !== 'python') return;
+    if (skin === this.skin) return;
+    this.skin = skin;
+    this.updateSkinButtons();
+    this.bank.setSkin(skin);
+    // The text is about to be rewritten in the new style: the blocks' reference copy has to be in it too.
+    if (this.session?.leader) {
+      try {
+        this.snapshot = this.bridge.generate(this.vm, skin);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    this.render();
+  }
+
+  private leaderChanged(isLeader: boolean): void {
+    if (!isLeader) {
+      window.clearTimeout(this.applyTimer);
+      this.setStatus('ok', 'Shared with others');
+      return;
+    }
+    // Whoever was putting the text into the blocks left: that is now our job.
+    try {
+      this.snapshot = this.bridge.generate(this.vm, this.skin);
+    } catch (error) {
+      console.error(error);
+    }
+    this.dirty = true;
+    this.scheduleApply();
+  }
+
+  /** Tell the others where the cursor is. */
+  private caretMoved(): void {
+    const session = this.session;
+    if (!session?.ready) return;
+    const { selectionStart: a, selectionEnd: b, selectionDirection } = this.input;
+    session.setCaret(a, b, selectionDirection === 'backward' ? a : b);
+  }
+
+  private updatePeople(): void {
+    this.peopleEl.replaceChildren();
+    for (const person of this.session?.people() ?? []) {
+      const chip = document.createElement('span');
+      chip.className = 'cw-code-person';
+      chip.style.setProperty('--cursor-color', person.color);
+      chip.textContent = person.name;
+      chip.title = `${person.name} has this code open`;
+      this.peopleEl.appendChild(chip);
+    }
+  }
+
+  /** Draw other people's cursors and selections. */
+  private drawCarets(): void {
+    if (this.caretFrame) return;
+    this.caretFrame = requestAnimationFrame(() => {
+      this.caretFrame = 0;
+      this.caretLayer.replaceChildren();
+      const session = this.session;
+      if (!session?.ready || !this.shown) return;
+      if (!this.metrics || this.metrics.char <= 0) this.metrics = measureMetrics(this.input, this.inner);
+      const m = this.metrics;
+      const value = this.input.value;
+      const lines = value.split('\n');
+      const frag = document.createDocumentFragment();
+      let soonest = Infinity;
+      for (const c of session.remoteCarets()) {
+        const color = c.color || 'var(--accent)';
+        const start = lineAndColumn(value, c.from);
+        const end = lineAndColumn(value, c.to);
+        if (c.from !== c.to) {
+          for (let line = start.line; line <= end.line; line++) {
+            const from = line === start.line ? start.col : 0;
+            const to = line === end.line ? end.col : visualColumn(lines[line] ?? '') + 1;
+            if (to <= from) continue;
+            const rect = document.createElement('div');
+            rect.className = 'cw-rsel';
+            rect.style.cssText = `left:${m.padLeft + from * m.char}px;top:${m.padTop + line * m.line}px;width:${(to - from) * m.char}px;height:${m.line}px;--cursor-color:${color}`;
+            frag.appendChild(rect);
+          }
+        }
+        const head = lineAndColumn(value, c.head);
+        const caret = document.createElement('div');
+        caret.className = 'cw-rcaret';
+        caret.style.cssText = `left:${m.padLeft + head.col * m.char}px;top:${m.padTop + head.line * m.line}px;height:${m.line}px;--cursor-color:${color}`;
+        // The name tag shows while someone is moving or typing, then shrinks away so it does not cover your code.
+        const key = `${c.from}:${c.to}:${c.head}`;
+        const seen = this.caretSeen.get(c.id);
+        if (!seen || seen.key !== key) this.caretSeen.set(c.id, { key, since: performance.now() });
+        const idle = performance.now() - (this.caretSeen.get(c.id)?.since ?? 0) > CARET_LABEL_MS;
+        if (!idle) soonest = Math.min(soonest, CARET_LABEL_MS - (performance.now() - this.caretSeen.get(c.id)!.since) + 50);
+        const label = document.createElement('div');
+        label.className = `cw-rcaret-label${head.line === 0 ? ' cw-below' : ''}${idle ? ' cw-idle' : ''}`;
+        label.textContent = c.name;
+        caret.appendChild(label);
+        frag.appendChild(caret);
+      }
+      this.caretLayer.appendChild(frag);
+      window.clearTimeout(this.caretIdleTimer);
+      if (soonest < Infinity) this.caretIdleTimer = window.setTimeout(() => this.drawCarets(), soonest);
+    });
+  }
+
   // ---- text <-> blocks ----
 
   /** The blocks changed (by you, or by a collaborator): update the text unless you are in the middle of typing. */
   private blocksChanged(): void {
-    if (!this.shown || this.applying) return;
+    if (!this.shown || this.applying || !this.session?.ready || !this.session.leader) return;
     window.clearTimeout(this.refreshTimer);
     this.refreshTimer = window.setTimeout(() => this.refresh(false), REFRESH_DELAY_MS);
   }
@@ -193,17 +419,19 @@ export class CodeEditor {
     this.targetId = id;
     this.dirty = false;
     window.clearTimeout(this.applyTimer);
-    this.refresh(true);
+    this.openSession();
   }
 
-  /** Write the blocks out as text. */
+  /** Write the blocks out as text (only the person who puts text into the blocks does this). */
   refresh(force: boolean): void {
-    if (!this.shown || this.applying) return;
+    const session = this.session;
+    if (!this.shown || this.applying || !session?.ready) return;
+    if (!session.leader && !force) return;
     if (this.dirty && !force) return;
     if (!this.vm.editingTarget) return;
     let snap: Snapshot;
     try {
-      snap = generate(this.vm, this.skin);
+      snap = this.bridge.generate(this.vm, this.skin);
     } catch (error) {
       console.error('Could not write the blocks as text', error);
       logDiag('code', 'generate failed', String(error));
@@ -212,43 +440,78 @@ export class CodeEditor {
     }
     this.snapshot = snap;
     this.dirty = false;
-    if (snap.text !== this.input.value) {
-      const start = this.input.selectionStart;
-      this.input.value = snap.text;
-      if (document.activeElement === this.input) this.input.setSelectionRange(Math.min(start, snap.text.length), Math.min(start, snap.text.length));
-    }
+    if (snap.text !== this.input.value) this.replaceText(snap.text);
     this.errors = [];
     this.render();
     this.showErrors();
     this.setStatus('ok', 'Matches the blocks');
   }
 
+  /** Change the whole text to `text`, sending only the part that differs, and keep the cursor where it was. */
+  private replaceText(text: string): void {
+    const session = this.session;
+    if (!session?.ready) return;
+    const input = this.input;
+    let a = input.selectionStart;
+    let b = input.selectionEnd;
+    const change = session.replaceAll(text);
+    input.value = text;
+    if (change) {
+      a = mapOffset(a, change);
+      b = mapOffset(b, change);
+    }
+    if (document.activeElement === input) input.setSelectionRange(Math.min(a, text.length), Math.min(b, text.length));
+    this.drawCarets();
+  }
+
+  /** You typed: share it, then check it (and, if you are the one doing it, put it into the blocks). */
   private typed(): void {
+    const session = this.session;
+    if (!session?.ready) return;
+    const change = diffText(session.text(), this.input.value);
+    if (change) session.edit(change);
+    this.caretMoved();
+    this.afterTextChange();
+    this.drawCarets();
+  }
+
+  private afterTextChange(): void {
     this.dirty = true;
     this.render();
     this.setStatus('busy', 'Editing…');
+    this.scheduleApply();
+  }
+
+  private scheduleApply(): void {
     window.clearTimeout(this.applyTimer);
     this.applyTimer = window.setTimeout(() => this.applyNow(), APPLY_DELAY_MS);
   }
 
-  /** Check the text and, if it is valid, put it into the blocks. Returns true when the blocks match the text. */
+  /** Check the text and, if it is valid and this is the computer that does it, put it into the blocks. Returns true when the text is fine. */
   applyNow(): boolean {
     window.clearTimeout(this.applyTimer);
     const source = this.input.value;
-    const result = parse(source, { skin: this.skin, externalProcs: externalProcs(this.vm) });
+    const result = parse(source, { skin: this.skin, externalProcs: this.bridge.externalProcs(this.vm) });
     this.errors = result.errors;
     this.declared = new Set(result.decls.map((d) => d.name));
     this.render();
     this.showErrors();
     if (result.errors.length > 0) {
       const n = result.errors.length;
-      this.setStatus('error', `${n} problem${n === 1 ? '' : 's'}. The blocks keep your last working version`);
+      const first = result.errors[0];
+      this.setStatus('error', `Line ${first.line}: ${first.message.replace(/[.\s]+$/, '')}${n > 1 ? ` (+${n - 1} more)` : ''}. The blocks keep the last working version`);
       return false;
+    }
+    if (this.session && !this.session.leader) {
+      // Somebody else's computer turns the shared text into blocks.
+      this.dirty = false;
+      this.setStatus('ok', 'Looks good. Shared with others');
+      return true;
     }
     const { workspace, Blockly } = this.editor.codeContext();
     this.applying = true;
     try {
-      const stats = applyParsed(this.vm, workspace, Blockly, result, this.skin, this.snapshot);
+      const stats = this.bridge.applyParsed(this.vm, workspace, Blockly, result, this.skin, this.snapshot);
       this.snapshot = { ...stats.snapshot, text: source };
       this.dirty = false;
       const changes = stats.added + stats.removed;
@@ -264,9 +527,18 @@ export class CodeEditor {
     }
   }
 
-  private async setSkin(skin: Skin): Promise<void> {
-    if (skin === this.skin) return;
+  private setSkin(skin: Skin): void {
+    const session = this.session;
+    if (skin === this.skin || !session?.ready) return;
     if (this.dirty && !this.applyNow()) {
+      this.setStatus('error', 'Fix the problems before switching style');
+      return;
+    }
+    const converted = convertText(this.input.value, this.skin, skin, this.bridge.externalProcs(this.vm));
+    if (!converted.ok) {
+      this.errors = converted.errors;
+      this.render();
+      this.showErrors();
       this.setStatus('error', 'Fix the problems before switching style');
       return;
     }
@@ -274,8 +546,29 @@ export class CodeEditor {
     saveCodeSkin(skin);
     this.updateSkinButtons();
     this.bank.setSkin(skin);
+    if (session.leader) {
+      try {
+        this.snapshot = this.bridge.generate(this.vm, skin);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    const input = this.input;
+    let a = input.selectionStart;
+    let b = input.selectionEnd;
+    const change = session.switchSkin(skin, converted.text);
+    input.value = converted.text;
+    if (change) {
+      a = mapOffset(a, change);
+      b = mapOffset(b, change);
+    }
+    input.setSelectionRange(Math.min(a, converted.text.length), Math.min(b, converted.text.length));
+    this.errors = [];
     this.dirty = false;
-    this.refresh(true);
+    this.render();
+    this.showErrors();
+    this.drawCarets();
+    this.setStatus('ok', 'Matches the blocks');
   }
 
   // ---- drawing ----
@@ -343,7 +636,8 @@ export class CodeEditor {
       let pieces = this.tokenize(line, state);
       const errs = errorsByLine.get(lineNo);
       if (errs) pieces = this.markErrors(pieces, errs);
-      html.push(pieces.map((p) => (p.cls ? `<span class="cw-t-${p.cls.replace(' ', ' cw-t-')}">${escapeHtml(p.text)}</span>` : escapeHtml(p.text))).join(''));
+      const message = errs ? `<span class="cw-t-msg">${escapeHtml(errs[0].message)}</span>` : '';
+      html.push(pieces.map((p) => (p.cls ? `<span class="cw-t-${p.cls.replace(' ', ' cw-t-')}">${escapeHtml(p.text)}</span>` : escapeHtml(p.text))).join('') + message);
       numbers.push(`<div class="${errs ? 'cw-bad' : ''}">${lineNo}</div>`);
     });
     this.highlight.innerHTML = html.join('\n') + '\n';
@@ -380,7 +674,9 @@ export class CodeEditor {
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'cw-code-error';
-      row.textContent = `Line ${e.line}: ${e.message}`;
+      const where = document.createElement('b');
+      where.textContent = `Line ${e.line}`;
+      row.append(where, e.message);
       row.addEventListener('click', () => this.jumpTo(e));
       this.errorsEl.appendChild(row);
     }
@@ -400,11 +696,12 @@ export class CodeEditor {
   private keydown(e: KeyboardEvent): void {
     if (this.hints.handleKey(e)) return;
     const input = this.input;
+    if (input.readOnly) return;
     if (e.key === 'Tab') {
       e.preventDefault();
       const { selectionStart: a, selectionEnd: b, value } = input;
       if (a === b && !e.shiftKey) {
-        document.execCommand('insertText', false, '    ');
+        document.execCommand('insertText', false, '\t');
         return;
       }
       // indent or unindent every selected line
@@ -412,7 +709,7 @@ export class CodeEditor {
       const block = value.slice(lineStart, b);
       const changed = block
         .split('\n')
-        .map((l) => (e.shiftKey ? l.replace(/^( {1,4}|\t)/, '') : `    ${l}`))
+        .map((l) => (e.shiftKey ? l.replace(/^( {1,4}|\t)/, '') : `\t${l}`))
         .join('\n');
       input.setSelectionRange(lineStart, b);
       document.execCommand('insertText', false, changed);
@@ -423,23 +720,24 @@ export class CodeEditor {
       const { selectionStart: a, value } = input;
       const lineStart = value.lastIndexOf('\n', a - 1) + 1;
       const before = value.slice(lineStart, a);
-      const indent = /^ */.exec(before)![0];
+      const indent = /^[ \t]*/.exec(before)![0];
       const opens = /[{:]\s*$/.test(before);
-      const closesNext = this.skin === 'csharp' && opens && before.trimEnd().endsWith('{') && value.slice(a).trimStart().startsWith('}') && /^[ \t]*\}/.test(value.slice(a));
+      const closesNext = this.skin === 'csharp' && opens && before.trimEnd().endsWith('{') && /^[ \t]*\}/.test(value.slice(a));
       e.preventDefault();
       if (closesNext) {
-        document.execCommand('insertText', false, `\n${indent}    \n${indent}`);
-        const pos = a + 1 + indent.length + 4;
+        document.execCommand('insertText', false, `\n${indent}\t\n${indent}`);
+        const pos = a + 1 + indent.length + 1;
         input.setSelectionRange(pos, pos);
-      } else document.execCommand('insertText', false, `\n${indent}${opens ? '    ' : ''}`);
+      } else document.execCommand('insertText', false, `\n${indent}${opens ? '\t' : ''}`);
       return;
     }
     if (e.key === '}' && this.skin === 'csharp') {
       const { selectionStart: a, selectionEnd: b, value } = input;
       const lineStart = value.lastIndexOf('\n', a - 1) + 1;
       const before = value.slice(lineStart, a);
-      if (a === b && /^ {4,}$/.test(before)) {
-        input.setSelectionRange(a - 4, a);
+      if (a === b && /^[ \t]+$/.test(before)) {
+        const remove = before.endsWith('\t') ? 1 : Math.min(4, before.length);
+        input.setSelectionRange(a - remove, a);
         document.execCommand('insertText', false, '}');
         e.preventDefault();
       }

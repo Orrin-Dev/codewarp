@@ -5,6 +5,8 @@
  * keeps track of who is in which room.
  */
 
+import type { TextOp, TextRun } from './textdoc';
+
 export interface Peer {
   id: string;
   name: string;
@@ -88,7 +90,19 @@ export type Op =
   /** Which monitors (the boxes on the stage) exist and which are showing. */
   | { k: 'monitors'; monitors: MonitorState[] }
   /** Variable and list values, sent when a live test run ends. */
-  | { k: 'values'; targets: Record<string, Record<string, unknown>> };
+  | { k: 'values'; targets: Record<string, Record<string, unknown>> }
+  /** Typing in the code editor of sprite `sprite` (see textdoc.ts). */
+  | { k: 'text'; sprite: string; ops: TextOp[] }
+  /** Someone opened the code editor of `sprite` and asks whoever has it open for the text. */
+  | { k: 'text-join'; sprite: string }
+  /** The text of `sprite`, answering the person `to`. */
+  | { k: 'text-state'; sprite: string; to: string; skin: string; runs: TextRun[] }
+  /** The code editor of `sprite` was switched to another style (C# or Python). */
+  | { k: 'text-skin'; sprite: string; skin: string }
+  /** Someone closed the code editor of `sprite`. */
+  | { k: 'text-leave'; sprite: string }
+  /** A fingerprint of the text of `sprite`, so everyone can check they have the same. */
+  | { k: 'text-sum'; sprite: string; sum: number; length: number };
 
 // ---- client -> server -------------------------------------------------------
 

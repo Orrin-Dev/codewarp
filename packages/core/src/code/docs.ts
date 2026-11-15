@@ -127,13 +127,13 @@ export const EXTRA_DOCS: { op: string; csharp: string; python: string; label: st
   { op: 'data_changevariableby', csharp: 'score += 1;', python: 'score += 1', label: 'change [score v] by (1)', desc: 'Adds to a variable (use a negative number to subtract).', category: 'Variables' },
   { op: 'data_variable', csharp: 'score', python: 'score', label: '(score)', desc: 'A variable used as a value. Names with spaces go in backticks: `my variable`.', category: 'Variables' },
   { op: 'data_listcontents', csharp: 'items', python: 'items', label: '(list)', desc: 'A whole list used as a value (declare it with public List<var> items; or items: List).', category: 'Variables' },
-  { op: 'procedures_definition', csharp: 'void Jump(string height, bool high) {\n    ...\n}', python: 'def jump(height, high: bool):\n    ...', label: 'define jump (height) <high>', desc: 'Makes your own block. Add [Warp] (C#) or @warp (Python) above it for "run without screen refresh". [Block("label %s")] / @block("label %s") sets the exact Scratch label.', category: 'My Blocks' },
+  { op: 'procedures_definition', csharp: 'void Jump(string height, bool high) {\n\t...\n}', python: 'def jump(height, high: bool):\n\t...', label: 'define jump (height) <high>', desc: 'Makes your own block. Add [Warp] (C#) or @warp (Python) above it for "run without screen refresh". [Block("label %s")] / @block("label %s") sets the exact Scratch label.', category: 'My Blocks' },
   { op: 'procedures_call', csharp: 'Jump(10, score > 3);', python: 'jump(10, score > 3)', label: 'jump (10) <>', desc: 'Runs one of your own blocks. Text and number slots take any value, true/false slots take a condition.', category: 'My Blocks' },
-  { op: 'control_repeat', csharp: 'for (int i = 0; i < 10; i++) {\n    ...\n}', python: 'for _ in range(10):\n    ...', label: 'repeat (10)', desc: 'Runs the lines inside a number of times. Scratch has no counter, so i is only there to look like a normal loop (you cannot use it inside).', category: 'Control' },
-  { op: 'control_forever', csharp: 'while (true) {\n    ...\n}', python: 'while True:\n    ...', label: 'forever', desc: 'Runs the lines inside again and again.', category: 'Control' },
-  { op: 'control_if', csharp: 'if (score > 5) {\n    ...\n}', python: 'if score > 5:\n    ...', label: 'if <> then', desc: 'Runs the lines inside only when the condition is true.', category: 'Control' },
-  { op: 'control_if_else', csharp: 'if (score > 5) {\n    ...\n} else if (score > 2) {\n    ...\n} else {\n    ...\n}', python: 'if score > 5:\n    ...\nelif score > 2:\n    ...\nelse:\n    ...', label: 'if <> then ... else', desc: 'Picks between blocks. "else if" chains nest if/else blocks.', category: 'Control' },
-  { op: 'control_repeat_until', csharp: 'while (!MouseDown()) {\n    ...\n}', python: 'while not mouse_down():\n    ...', label: 'repeat until <>', desc: 'A while loop: it keeps going while the condition is true. "repeat until X" is written while (!X). Writing while (x < 5) gives "repeat until not <x < 5>".', category: 'Control' },
+  { op: 'control_repeat', csharp: 'for (int i = 0; i < 10; i++) {\n\t...\n}', python: 'for _ in range(10):\n\t...', label: 'repeat (10)', desc: 'Runs the lines inside a number of times. Scratch has no counter, so i is only there to look like a normal loop (you cannot use it inside).', category: 'Control' },
+  { op: 'control_forever', csharp: 'while (true) {\n\t...\n}', python: 'while True:\n\t...', label: 'forever', desc: 'Runs the lines inside again and again.', category: 'Control' },
+  { op: 'control_if', csharp: 'if (score > 5) {\n\t...\n}', python: 'if score > 5:\n\t...', label: 'if <> then', desc: 'Runs the lines inside only when the condition is true.', category: 'Control' },
+  { op: 'control_if_else', csharp: 'if (score > 5) {\n\t...\n} else if (score > 2) {\n\t...\n} else {\n\t...\n}', python: 'if score > 5:\n\t...\nelif score > 2:\n\t...\nelse:\n\t...', label: 'if <> then ... else', desc: 'Picks between blocks. "else if" chains nest if/else blocks.', category: 'Control' },
+  { op: 'control_repeat_until', csharp: 'while (!MouseDown()) {\n\t...\n}', python: 'while not mouse_down():\n\t...', label: 'repeat until <>', desc: 'A while loop: it keeps going while the condition is true. "repeat until X" is written while (!X). Writing while (x < 5) gives "repeat until not <x < 5>".', category: 'Control' },
 ];
 
 export const CATEGORIES = ['Motion', 'Looks', 'Sound', 'Events', 'Control', 'Sensing', 'Operators', 'Variables', 'My Blocks'];
@@ -172,7 +172,7 @@ function example(spec: BlockSpec, skin: Skin): string {
   if (spec.kind === 'H') {
     const attr = skin === 'csharp' ? `When${name}` : `when_${spec.name}`;
     const full = rest.length ? `${attr}(${rest.map(sample).join(', ')})` : attr;
-    return skin === 'csharp' ? `[${full}]\nvoid On${name}() {\n    ...\n}` : `@${full}\ndef on_${spec.name}():\n    ...`;
+    return skin === 'csharp' ? `[${full}]\nvoid On${name}() {\n\t...\n}` : `@${full}\ndef on_${spec.name}():\n\t...`;
   }
   if (spec.kind === 'S' || spec.kind === 'P') return skin === 'csharp' ? `${call};` : call;
   return call;
@@ -204,8 +204,8 @@ export const BASICS: { title: string; desc: string; csharp: string; python: stri
   {
     title: 'Scripts (events)',
     desc: 'Every script is a method with an event on top: an attribute in C#, a decorator in Python. The lines inside run top to bottom. Leave a blank line between scripts. Blocks with no event use [NoEvent] / @no_event.',
-    csharp: '[WhenFlagClicked]\nvoid OnFlagClicked() {\n    Move(10);\n}\n\n[WhenKeyPressed("space")]\nvoid OnKeyPressed() {\n    Jump(10, true);\n}',
-    python: '@when_flag_clicked\ndef on_flag_clicked():\n    move(10)\n\n@when_key_pressed("space")\ndef on_key_pressed():\n    jump(10)',
+    csharp: '[WhenFlagClicked]\nvoid OnFlagClicked() {\n\tMove(10);\n}\n\n[WhenKeyPressed("space")]\nvoid OnKeyPressed() {\n\tJump(10, true);\n}',
+    python: '@when_flag_clicked\ndef on_flag_clicked():\n\tmove(10)\n\n@when_key_pressed("space")\ndef on_key_pressed():\n\tjump(10)',
   },
   {
     title: 'Variables and lists',
@@ -228,26 +228,26 @@ export const BASICS: { title: string; desc: string; csharp: string; python: stri
   {
     title: 'Maths and conditions',
     desc: 'Use + - * / % for maths, == != < > <= >= to compare, and && || ! (C#) or and or not (Python) to combine true/false values. Use brackets to group.',
-    csharp: 'if (XPosition() > 100 && !MouseDown()) {\n    Say(score * 2 + 1);\n}',
-    python: 'if x_position() > 100 and not mouse_down():\n    say(score * 2 + 1)',
+    csharp: 'if (XPosition() > 100 && !MouseDown()) {\n\tSay(score * 2 + 1);\n}',
+    python: 'if x_position() > 100 and not mouse_down():\n\tsay(score * 2 + 1)',
   },
   {
     title: 'Loops',
     desc: 'A for loop with a count repeats that many times. while (true) is forever. while (!x) repeats until x is true (while (x) keeps going while x is true).',
-    csharp: 'for (int i = 0; i < 10; i++) {\n    Move(5);\n}\nwhile (true) {\n    TurnRight(1);\n}\nwhile (!MouseDown()) {\n    Wait(1);\n}',
-    python: 'for _ in range(10):\n    move(5)\nwhile True:\n    turn_right(1)\nwhile not mouse_down():\n    wait(1)',
+    csharp: 'for (int i = 0; i < 10; i++) {\n\tMove(5);\n}\nwhile (true) {\n\tTurnRight(1);\n}\nwhile (!MouseDown()) {\n\tWait(1);\n}',
+    python: 'for _ in range(10):\n\tmove(5)\nwhile True:\n\tturn_right(1)\nwhile not mouse_down():\n\twait(1)',
   },
   {
     title: 'Your own blocks',
     desc: 'A method with no event is your own block. bool arguments take true/false values. Add [Warp] / @warp for "run without screen refresh".',
-    csharp: '[Warp]\nvoid Jump(string height, bool fast) {\n    ChangeY(height);\n}',
-    python: '@warp\ndef jump(height, fast: bool):\n    change_y(height)',
+    csharp: '[Warp]\nvoid Jump(string height, bool fast) {\n\tChangeY(height);\n}',
+    python: '@warp\ndef jump(height, fast: bool):\n\tchange_y(height)',
   },
   {
     title: 'Empty slots',
     desc: 'Leave a true/false slot empty with default (C#) or None (Python).',
-    csharp: 'if (default) {\n    Move(10);\n}',
-    python: 'if None:\n    move(10)',
+    csharp: 'if (default) {\n\tMove(10);\n}',
+    python: 'if None:\n\tmove(10)',
   },
   {
     title: 'Comments',
